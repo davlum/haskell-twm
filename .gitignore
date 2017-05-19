@@ -1,0 +1,7 @@
+yinacf10/
+*.wav
+*.o
+*.hi
+dist/
+FFTTest*
+HarmonicAnalysis
