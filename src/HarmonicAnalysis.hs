@@ -45,25 +45,13 @@ calcVertex (x1, y1) (x2, y2) (x3, y3)
 
 type SampleRate = Int
 
-
--- Seems to produce OK results, but algorithm is technically
--- incorrect. 2*pi should be applied to the entire tail
--- of the vector.
-unwrap :: Vector Double -> Vector Double
-unwrap xs = scanl' diff (Vec.head xs) (Vec.tail xs) where
-  diff x y
-    | y - x > pi    = y - 2*pi
-    | y - x < (-pi) = y + 2*pi
-    | otherwise     = y
-
 unwrap' :: Vector Double -> Vector Double
 unwrap' vec = fromList (go (toList vec)) where
   go (x:rest@(y:_))
-    | y - x > pi    = x: go (fmap (-(2*pi)) rest)
-    | y - x < (-pi) = x: go (fmap (+(2*pi)) rest)
+    | y - x > pi    = x: go (fmap ((-)(2*pi)) rest)
+    | y - x < (-pi) = x: go (fmap ((+)(2*pi)) rest)
     | otherwise     = x: go rest
-    go _            = []
-
+  go _            = []
 
 -- Takes a vector of complex values, converts it to magnitude and phase.
 -- The magnitude is then coverted to Db and the phase is unwrapped.
@@ -80,17 +68,29 @@ calcSpecs xs = scanl' diff (dB $ Comp.polar (Vec.head xs)) (Vec.tail xs) where
 
 --Takes a vector and does a zero phase window with an
 --FFT size equal to n
-zeroPhaseWindow :: RealFloat a => Vector a -> Int -> Vector a
-zeroPhaseWindow xs win = let hM1 = floor $ (fromIntegral (win + 1)) / 2
+zeroPhaseWindow :: Vector (Comp.Complex Double)  -> Int -> Vector (Comp.Complex Double)
+zeroPhaseWindow xs win = let hM1 = floor $ fromIntegral (win + 1) / 2
                              hM2 = floor $ (fromIntegral win) / 2
-                             zs = Vec.replicate ((pO2GTn win)-hM1-hM2) 0.0
+                             zs = Vec.replicate ((pO2GTn win)-hM1-hM2) (c 0)
                        in Vec.concat [(Vec.slice hM2 hM1 xs), zs,
                                       (Vec.slice 0 hM2 xs)]
 
+{-
+deWindow :: Vector (Double, Double) -> Int -> Vector (Double, Double)
+deWindow vec win = let hN = Vec.length vec
+                       n = (hN-1)*2
+                       hM1 = floor $ fromIntegral (win+1) / 2
+                       hM2 = floor $ fromIntegral win / 2
+                       zs :: Vector (Comp.Complex Double)
+                       zs = Vec.replicate (n - hM1 - hM2) 0.0
+                    in Vec.concat [(Vec.slice hM2 hM1 x), (Vec.slice 0 hM2 x)]
+-}
+
+
 -- returns a hamming window of size n
-hamming :: RealFloat a => Int -> Vector a
+hamming :: Int -> Vector (Comp.Complex Double)
 hamming m = generate m hamming' where
-  hamming' n = 0.54 - 0.46*cos(2 * pi * (fromIntegral n)/(fromIntegral m-1))
+        hamming' n = c $ 0.54 - 0.46*cos(2 * pi * (fromIntegral n)/(fromIntegral m-1))
 
 normTo0Db :: Vector (Double,Double) -> Vector (Double, Double)
 normTo0Db xs = Vec.map (first ((-) (fst $ Vec.maximumBy compare xs))) xs
@@ -106,13 +106,32 @@ pO2GTn n = 2^(ceiling $ logBase 2 (fromIntegral n))
 -- (Magnitude, Phase). Magnitude in Db, phase unwrapped, both positve
 -- half of the spectrum. FFT size is the next power of 2 greater than
 -- the window size.
-dftAnal :: Vector Double -> Int -> Vector (Double, Double)
+dftAnal :: Vector (Comp.Complex Double) -> Int -> Vector (Double, Double)
 dftAnal xs win = let wx = Vec.zipWith (*) (hamming win) xs
                      inputVec = zeroPhaseWindow wx win
                      hN = (Vec.length inputVec) `div` 2 + 1
                      x :: Vector (Comp.Complex Double)
-                     x = run dftR2C inputVec
+                     x = run dft inputVec
                  in calcSpecs (Vec.slice 0 hN x)
+
+
+dftAnal' :: Vector (Comp.Complex Double) -> Int -> Vector (Double, Double)
+dftAnal' xs win = let wx = Vec.zipWith (*) (hamming win) xs
+                      inputVec = zeroPhaseWindow wx win
+                      hN = (Vec.length inputVec) `div` 2 + 1
+                      x :: Vector (Comp.Complex Double)
+                      x = run dft inputVec
+                      xUnzip = Vec.unzip $ Vec.map Comp.polar (Vec.slice 0 hN x)
+                   in Vec.zip (magSpectrum (fst xUnzip)) (unwrap' (snd xUnzip))
+
+dftAnal'' :: Vector (Comp.Complex Double) -> Int -> Vector (Double, Double)
+dftAnal'' xs win = let wx = Vec.zipWith (*) (hamming win) xs
+                       inputVec = zeroPhaseWindow wx win
+                       hN = (Vec.length inputVec) `div` 2 + 1
+                       x :: Vector (Comp.Complex Double)
+                       x = run dft inputVec
+                       xUnzip = Vec.unzip $ Vec.map Comp.polar (Vec.slice 0 hN x)
+                   in Vec.zip (magSpectrum (fst xUnzip)) (unwrap' (snd xUnzip))
 
 
 -- Takes a vector of tuples (Magnitude, Phase) and a window size
@@ -137,19 +156,45 @@ dftSynth vec win = let hN = Vec.length vec
                                                                 zs, negFreqs]))
                     in Vec.concat [(Vec.slice hM2 hM1 x), (Vec.slice 0 hM2 x)]
 
+-- Takes a vector of tuples (Magnitude, Phase) and a window size
+-- and writes the file.
+dftSynth' :: Vector (Double, Double) -> Int -> Vector Double
+dftSynth' vec win = let hN = Vec.length vec
+                        n = (hN-1)*2
+                        if isPo2 n 
+                           then 
+                            hM1 = floor $ fromIntegral (win+1) / 2
+                            hM2 = floor $ fromIntegral win / 2
+                           zs :: Vector (Comp.Complex Double)
+                           zs = Vec.replicate (n - hM1 - hM2) 0.0
+                           posFreqs = Vec.map f vec where
+                             f (mag, phase) = (10**(mag/20) Comp.:+ 0) *
+                                               (exp ((phase Comp.:+ 0) *
+                                               (0 Comp.:+ 1)))
+                           negFreqs = ((Vec.map f) . Vec.reverse) (g vec) where
+                             g = (Vec.init . Vec.tail)
+                             f (mag, phase) = (10**(mag/20) Comp.:+ 0) *
+                                               (exp ((phase Comp.:+ 0) *
+                                               (0 Comp.:+ (-1))))
+                           x = Vec.map Comp.realPart (run idft (Vec.concat [posFreqs,
+                                                                    zs, negFreqs]))
+                        else
+                          error "n is not a power of 2"
+                    in Vec.concat [(Vec.slice hM2 hM1 x), (Vec.slice 0 hM2 x)]
+
 
 -- Gives magnitude spectrum until n in Db
-magSpectrum :: (Epsilon a, RealFloat a) => Vector a -> Int -> Vector a
-magSpectrum xs n = Vec.map f (Vec.slice 0 n xs) where
-  f x
+magSpectrum :: Vector Double -> Vector Double
+magSpectrum vec = Vec.map dB vec where
+  dB x
     | nearZero x = x
-    | otherwise  = 20 * log (abs x)
+    | otherwise        = 20 * log (abs x)
 
 -- linear interpolation
 linInterp :: Num a => [a] -> [(a, a)] -> [a]
 linInterp = undefined
 
---
+-- parabolic interpolation
 paraInterp :: Num a => [a] -> [(a, a)] -> [a]
 paraInterp = undefined
 
@@ -159,6 +204,12 @@ outMain :: Vector Double -> Int -> String -> IO ()
 outMain vec sf name = let samples = fmap ((:[]) . doubleToSample) (Vec.toList vec)
                           header = WAVEHeader 1 sf 32 Nothing
                        in putWAVEFile name (WAVE header samples)
+
+isPo2 :: (Ord a, Fractional a) => a -> Bool
+isPo2 x
+  | x > 2     = isPo2 (x / 2)
+  | x == 2    = True
+  | otherwise = False
 
 main :: IO ()
 main = do
@@ -170,15 +221,15 @@ main = do
       sampRate = waveFrameRate header
   case channels of
     1 -> do putStrLn $ "rate = " Pre.++ show sampRate
-            let inputVec = fromList $ fmap (sampleToDouble.(Prelude.head)) samples
+            let inputVec = fromList $ fmap (c.sampleToDouble.(Prelude.head)) samples
                 win = let f = \x -> if even x then x - 1 else x
                        in f $ Vec.length inputVec
                 analysis = dftAnal inputVec win
-            print analysis
-            let trsf = dftSynth (analysis) win
+                zPhase = zeroPhaseWindow inputVec win
+            print $ Vec.map fst analysis
+            let trsf = dftSynth' (analysis) win
             outMain trsf sampRate "test.wav"
     _ -> putStrLn "Should be mono."
-
 
 {-
 main :: IO ()
@@ -192,10 +243,8 @@ main = do
   case channels of
     1 -> do putStrLn $ "rate = " Pre.++ show sampRate
             let inputVec = fromList $ fmap (c.sampleToDouble.(Prelude.head)) samples
-                l = Vec.length inputVec
-            pl <- Numeric.FFT.plan l
-            let trsf = fftWith pl inputVec
-                itrsf = Vec.map Comp.realPart (ifftWith pl trsf)
+                trsf = run dft inputVec
+                itrsf = Vec.map Comp.realPart (run idft trsf)
             outMain itrsf sampRate "test.wav"
     _ -> putStrLn "Should be mono."
 -}
