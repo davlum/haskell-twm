@@ -3,6 +3,17 @@ module Main where
 import STFT
 import Window
 import qualified Data.Vector as V
+import Data.Bifunctor (first)
+import Data.Ord (comparing)
+import Control.Monad
+import Control.Monad.ST
+import Data.STRef
+import Data.Fixed (mod')
+
+minf0 = 80 -- minimum possible fundamental
+maxf0 = 3000 -- maximum possible fundamental
+f0et = 5.0 -- maximum error threshold
+
 
 localMaxima :: [Double] -> [Double]
 localMaxima (x:rest@(y:z:_))
@@ -33,9 +44,53 @@ peakInterp mag peaks = V.map iPM peaks where
                      ip = iploc i vs
                   in (ip, (m - 0.25*(l-r)*(ip-(fromIntegral i))))
 
-iFreqs :: Int -> Int -> Vector (Double, Double)
-iFreqs fs fftsz = V.map f where
-  f =  ((*fs).(/fftsz).fst)
+-- turns a vector of (locations, magnitude) into a vector of (freqs, magnitude).
+iFreqs :: Int -> Int -> V.Vector (Double, Double) -> V.Vector (Double, Double)
+iFreqs fs fftsz vec = V.map f vec where
+  f =  first ((*(fromIntegral fs)).(/(fromIntegral fftsz)))
+
+-- takes Vector of (freq, magnitudes) a vector (freq, mag) of the f0
+-- candidates and returns an f0 candidate.
+-- Very ugly. Should refactor.
+f0Twm :: V.Vector (Double, Double) -> Double -> Double
+f0Twm freqMag f0t
+    | V.length freqMag < 3 && f0t == 0 = 0
+    | V.null f0c = 0
+    | otherwise = if f0t <= 0 then twm vec f0c
+                  -- If there is no stable previous candidate tehn
+                  -- just run twm, else only check close peaks.
+                    else twm vec (modls shortList)
+   where
+    f0c = (V.filter (\(freq, _) -> freq > minf0 && freq < maxf0) freqMag)
+    maxcTup = V.maximumBy (comparing snd) f0c
+    maxcfd = fst maxcTup `mod'` f0t
+    shortList :: V.Vector (Double, Double)
+    shortList = V.filter f f0c
+    f (freq, mag) = (abs (freq - f0t)) < (f0t/2)
+    modmax x = if x > f0t/2 then f0t - x else x
+    modls v = if V.elem maxcTup v && (modmax maxcfd) >(f0t/4)
+                 then V.cons maxcTup v else v
+
+maxErr :: (Double, Double) -> Double -> Double
+maxErr (peak, err) et
+  | err < et = peak
+  | otherwise = 0
+
+twm :: V.Vector (Double, Double) -> V.Vector (Double, Double) -> (Double, Double)
+twm freqMag peaks
+    | V.null peaks = (0, 0)
+    | otherwise = (f0, err)
+  where
+    -- Values for the Two way mismatch algorithm
+    p = 0.5
+    q = 1.4
+    r = 0.5
+    rho = 0.33
+    maxnpeaks = 10
+    aMax = (V.maximumBy (comparing snd) magfreq)
+    fMax = (V.maxmumBy (comparing fst)
+
+
 
 calcVertex :: (Eq a, Fractional a) => (a, a) -> (a, a) -> (a, a) -> (a -> a)
 calcVertex (x1, y1) (x2, y2) (x3, y3)

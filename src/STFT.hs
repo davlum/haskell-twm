@@ -28,6 +28,8 @@ import Data.Vector.Split (divvy)
 c :: Num a => a -> Comp.Complex a
 c = (Comp.:+ 0)
 
+-- Rewrite to replace divvy function. No use adding another
+-- dependency for one function.
 {-
 splitInto :: Int -> Int -> Vector a -> [Vector a]
 splitInto hopsz winsz = unfoldr go where
@@ -35,8 +37,9 @@ splitInto hopsz winsz = unfoldr go where
        | otherwise            = Just (Vec.take winsz v, Vec.drop hopsz v)
 -}
 
--- This is really bad time and space complexity (O(n^3) total) converting to
--- and from list for pattern matching. See suggestions here for improvement;
+-- Phase unwrapping algorithm.
+-- Converting to and from list for pattern matching is a little cumbersome.
+-- See this post for possible improvement;
 -- http://stackoverflow.com/questions/36993937/haskell-pattern-matching-on-vectors
 unwrap :: Vector Double -> Vector Double
 unwrap xs = fromList $ diff (toList xs) 0 where
@@ -47,8 +50,8 @@ unwrap xs = fromList $ diff (toList xs) 0 where
   diff [x] _     = [x]
   diff []  _     = []
 
---Takes a vector and does a zero phase window with an
---FFT size equal to n
+-- Takes a vector and fftsz does zero phase windows with an
+-- FFT size equal to fftsz
 zeroPhaseWindow :: Vector (Comp.Complex Double)  -> Int -> Vector (Comp.Complex Double)
 zeroPhaseWindow xs fftsz = let win = Vec.length xs
                                hM1 = floor $ fromIntegral (win + 1) / 2
@@ -57,11 +60,11 @@ zeroPhaseWindow xs fftsz = let win = Vec.length xs
                             in Vec.concat [(Vec.slice hM2 hM1 xs), zs,
                                                (Vec.slice 0 hM2 xs)]
 
--- Normalize signal to 0 Db
+-- Normalize signal to 0 Db.
 normTo0Db :: Vector (Double,Double) -> Vector (Double, Double)
 normTo0Db xs = Vec.map (first ((-) (fst $ Vec.maximumBy compare xs))) xs
 
--- Next power of 2 greater than n
+-- Next power of 2 greater than n.
 pO2GTn :: Int -> Int
 pO2GTn n = 2^(ceiling $ logBase 2 (fromIntegral n))
 
@@ -88,8 +91,7 @@ phaseSpectrum vec = unwrap $ Vec.map ((Comp.phase).to0) vec where
 
 -- Takes a windowed signal and FFT size returns a vector of tuples
 -- (Magnitude, Phase). Magnitude in Db, phase unwrapped, both positve
--- half of the spectrum. FFT size is the next power of 2 greater than
--- the window size.
+-- half of the spectrum.
 dftAnal :: Int -> Vector (Comp.Complex Double) -> (Vector Double, Vector Double)
 dftAnal fftsz winSig = (mag, phase) where
     inputVec = zeroPhaseWindow winSig fftsz
@@ -139,7 +141,7 @@ writeWav vec sf name = let samples = fmap ((:[]) . doubleToSample) (Vec.toList v
                            header = WAVEHeader 1 sf 32 Nothing
                        in putWAVEFile name (WAVE header samples)
 
--- Takes a Path and Returns sampling frequency and signal.
+-- Takes a Path and returns either string error or Vector (sampling frequency, signal).
 readWav :: String -> IO (Either String (Int, (Vector (Comp.Complex Double))))
 readWav path = do
   audio <- getWAVEFile "singing-female.wav"
