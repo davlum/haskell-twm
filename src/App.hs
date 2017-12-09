@@ -18,11 +18,9 @@ import qualified Data.Vector as V
 type SongApi =
  "song" :> Get '[JSON] [Song] :<|>
  "song" :> Capture "songId" Integer :> Get '[JSON] Song
- "song" :> "add" :> Capture "songPath" String
 
-
-userApi :: Proxy UserApi
-userApi = Proxy
+songApi :: Proxy SongApi
+songApi = Proxy
 
 run :: IO ()
 run = do
@@ -34,30 +32,28 @@ run = do
  runSettings settings =<< mkApp
 
 mkApp :: IO Application
-mkApp = return $ serve userApi server
+mkApp = return $ serve songApi server
 
-server :: Server UserApi
+server :: Server SongApi
 server =
   getSongs :<|>
-  getSongById :<|>
-  addSong
+  getSongById
 
 getSongs :: Handler [Song]
-getSongs = return [
+getSongs = return [exampleSong]
 
 getSongById :: Integer -> Handler Song
 getSongById = \case
-
-addSong :: String -> Song
-addSong str = Song $ 1 str (twmf0 $ readWav s)
+  0 -> return exampleSong
+  _ -> throwE err404
 
 exampleSong :: Song
 exampleSong = Song 0 Nothing V.empty
 
 data Song
  = Song {
-   songId :: Integer
-   songPath :: Maybe String
+   songId :: Integer,
+   songPath :: Maybe String,
    songData :: V.Vector Double
         } deriving (Eq, Show, Generic)
 
