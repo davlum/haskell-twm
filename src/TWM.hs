@@ -13,6 +13,7 @@ import           Data.Ord            (comparing)
 import qualified Data.Tree
 import qualified Data.Tree           as T
 import qualified Data.Vector         as V
+import           Debug.Trace
 import           GHC.Generics
 import           STFT
 import           Window
@@ -44,7 +45,7 @@ f0Detection :: (Int, Signal)
             -> Freq
             -> Freq
             -> Double
-            -> [V.Vector Freq]
+            -> [Maybe Freq]
 f0Detection (fs, sig) window fftsz hopsz thresh minfreq maxfreq errmax =
   tail $ scanl scanf0Twm Nothing lsVec where
     sigstft = stft sig window fftsz hopsz
@@ -90,10 +91,10 @@ peakInterp mag phase peaks = V.unzip3 (V.map iPM peaks) where
              in (iPeak, iMag, iPhase)
 
 
-decide :: Alternative f => a -> T.Tree (Decision a b) -> f b
-decide x (T.Node (Action f) _) = pure (f x)
+decide :: Alternative f => T.Tree (Decision a b) -> f b
+decide x (T.Node (Action f) _) = pure f x
 decide x (T.Node (Requirement p) subtree)
-  | p x       = asum $ map (decide x) subtree
+  | p x      = asum $ map (decide x) subtree
   | otherwise = empty
 
 ifStable :: Maybe Freq -> V.Vector Freq -> MagSpect -> V.Vector Freq
@@ -102,19 +103,21 @@ ifStable f0t f0cf f0cm = case f0t of
   Just f  ->
     let shortlist = V.findIndices (\x -> abs (x - f) < f/2) f0cf
         maxc = V.maxIndex f0cm
-        maxcfd = (f0cf V.! maxc) `mod` f
-    in decide $
-      iff (const True) [
-        iff (maxcfd > f0t/2) [
-          iff (notElem maxc shortlist && ((f0t - maxcfd) > (f0t / 4))) [
-            action (V.backpermute f0cf (V.snoc shortlist maxc))
-          ]
-        ],
-        iff (notElem maxc shortlist && (maxcfd > (f0t / 4))) [
-          action (V.backpermute f0cf (V.snoc shortlist maxc))
-        ],
-        action V.backpermute f0cf shortlist
-      ]
+        maxcfd = (f0cf V.! maxc) `mod'` f
+        decisions f0t' =
+            iff (const True) [
+                iff (maxcfd > f0t'/2) [
+                  iff (notElem maxc shortlist && ((f0t - maxcfd) > (f0t' / 4))) [
+                    const (action (V.backpermute f0cf (V.snoc shortlist maxc)))
+                  ]
+                ],
+                iff (notElem maxc shortlist && (maxcfd > (f0t' / 4))) [
+                  const (action (V.backpermute f0cf (V.snoc shortlist maxc)))
+                ],
+                const (action V.backpermute f0cf shortlist)
+              ]
+    in decide f0t decisions
+
 
 maxErr :: Double -> Freq -> Double -> Maybe Freq
 maxErr errmax f0 f0err = case f0 of
@@ -132,13 +135,12 @@ f0Twm :: V.Vector Freq  -- Peak Freqs
       -> Freq           -- minimum Freq
       -> Freq           -- maximum Freq
       -> Maybe Freq     -- Last f0 Cand
-      -> V.Vector Freq
+      -> Maybe Freq
 f0Twm pfreq pmag errmax minfreq maxfreq f0t
   | V.length pfreq < 3 && isNothing f0t = Nothing
   | V.length f0c == 0 = Nothing
   | V.length f0cf' == 0 = Nothing
-  -- | otherwise = maxErr errmax $ twm pfreq pmag f0cf'
-  | otherwise = twm pfreq pmag f0cf'
+  | otherwise = maxErr errmax $ twm pfreq pmag f0cf'
   where
       f0c = V.findIndices (\x -> x > minfreq && x < maxfreq) pfreq
       f0cf = V.backpermute pfreq f0c
@@ -147,11 +149,11 @@ f0Twm pfreq pmag errmax minfreq maxfreq f0t
 
 
 twm :: V.Vector Freq -> MagSpect -> V.Vector Freq -> (Double, Double)
-twm pfreq pmag f0cf = pfreq
+twm pfreq pmag f0cf = (0, 0)
 
 
 
-{-      
+{-
 -- Vector of peak (freq, mag), Vector of (freq, mag) candidates for f0
 twm :: V.Vector Freq -> MagSpect -> V.Vector Freq -> (Double, Double)
 twm pfreq pmag candidates = V.minimumBy (comparing snd) genErrs where
@@ -220,6 +222,5 @@ main = do
   let window = hammingC 2048
       -- (sample rate, window, FFTsz, Hopsz, Thresh in DB, min freq, maxfreq, error margin)
       anal = f0Detection audio window 2048 256 (-80) 100 3000 5.0
-      fst3 (_, _, a) = a
-  mapM_ (print . fst3) anal
+  mapM_ print anal
  -- writeFile "f0detect.txt" (show anal)
