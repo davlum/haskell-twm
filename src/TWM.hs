@@ -29,13 +29,6 @@ type Indices = V.Vector Int
 type Freq = Double
 
 
-localMaxima :: [Double] -> [Double]
-localMaxima (x:rest@(y:z:_))
-  | y > x && y > z = y : localMaxima rest
-  | otherwise      = 0 : localMaxima rest
-localMaxima _ = []
-
-
 -- linear interpolation between two points
 linInterp :: (Int, Double) -> (Int, Double) -> Double -> Double
 linInterp (x0, y0) (x1, y1) x = y0 + (x - fromIntegral x0)*((y1 - y0)/ fromIntegral (x1 - x0))
@@ -51,7 +44,7 @@ f0Detection :: (Int, Signal)
             -> Freq
             -> Freq
             -> Double
-            -> [(V.Vector Double, MagSpect, PhaseSpect)]
+            -> [V.Vector Freq]
 f0Detection (fs, sig) window fftsz hopsz thresh minfreq maxfreq errmax =
   tail $ scanl scanf0Twm Nothing lsVec where
     sigstft = stft sig window fftsz hopsz
@@ -139,21 +132,26 @@ f0Twm :: V.Vector Freq  -- Peak Freqs
       -> Freq           -- minimum Freq
       -> Freq           -- maximum Freq
       -> Maybe Freq     -- Last f0 Cand
-      -> Maybe Freq
+      -> V.Vector Freq
 f0Twm pfreq pmag errmax minfreq maxfreq f0t
   | V.length pfreq < 3 && isNothing f0t = Nothing
   | V.length f0c == 0 = Nothing
   | V.length f0cf' == 0 = Nothing
-  | otherwise = maxErr errmax $ twm pfreq pmag f0cf'
-    where
+  -- | otherwise = maxErr errmax $ twm pfreq pmag f0cf'
+  | otherwise = twm pfreq pmag f0cf'
+  where
       f0c = V.findIndices (\x -> x > minfreq && x < maxfreq) pfreq
       f0cf = V.backpermute pfreq f0c
       f0cm = V.backpermute pmag f0c
       f0cf' = ifStable f0t f0cf f0cm
 
 
+twm :: V.Vector Freq -> MagSpect -> V.Vector Freq -> (Double, Double)
+twm pfreq pmag f0cf = pfreq
 
 
+
+{-      
 -- Vector of peak (freq, mag), Vector of (freq, mag) candidates for f0
 twm :: V.Vector Freq -> MagSpect -> V.Vector Freq -> (Double, Double)
 twm pfreq pmag candidates = V.minimumBy (comparing snd) genErrs where
@@ -214,7 +212,7 @@ calcVertex (x1, y1) (x2, y2) (x3, y3)
            c = (x2 * x3 * (x2 - x3) * y1 +
                 x3 * x1 * (x3 - x1) * y2 +
                 x1 * x2 * (x1 - x2) * y3) / denom
-
+-}
 
 main :: IO ()
 main = do
@@ -223,5 +221,5 @@ main = do
       -- (sample rate, window, FFTsz, Hopsz, Thresh in DB, min freq, maxfreq, error margin)
       anal = f0Detection audio window 2048 256 (-80) 100 3000 5.0
       fst3 (_, _, a) = a
-  mapM_ (print.fst3) anal
+  mapM_ (print . fst3) anal
  -- writeFile "f0detect.txt" (show anal)
