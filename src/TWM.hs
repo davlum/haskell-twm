@@ -3,6 +3,7 @@
 module Main where
 
 import           Control.Applicative
+import           Control.DeepSeq
 import           Data.Bifunctor      (first)
 import qualified Data.Complex        as C
 import           Data.Fixed          (mod')
@@ -10,18 +11,11 @@ import           Data.Foldable
 import           Data.List           (scanl')
 import           Data.Maybe
 import           Data.Ord            (comparing)
-import qualified Data.Tree
-import qualified Data.Tree           as T
 import qualified Data.Vector         as V
 import           Debug.Trace
 import           GHC.Generics
 import           STFT
 import           Window
-
-data Decision a b = Requirement (a -> Bool) | Action (a -> b)
-
-iff = T.Node . Requirement
-action = flip T.Node [] . Action
 
 type Threshold = Int
 
@@ -29,6 +23,7 @@ type Indices = V.Vector Int
 
 type Freq = Double
 
+type Matrix a = V.Vector (V.Vector a)
 
 -- linear interpolation between two points
 linInterp :: (Int, Double) -> (Int, Double) -> Double -> Double
@@ -45,9 +40,9 @@ f0Detection :: (Int, Signal)
             -> Freq
             -> Freq
             -> Double
-            -> [Maybe Freq]
+            -> [Freq]
 f0Detection (fs, sig) window fftsz hopsz thresh minfreq maxfreq errmax =
-  tail $ scanl scanf0Twm Nothing lsVec where
+  fmap (fromMaybe 0) (tail $ scanl scanf0Twm Nothing lsVec) where
     sigstft = stft sig window fftsz hopsz
     lsVec = fmap peakMod sigstft
     ipFreqs (a, b, c) = (V.map ((fromIntegral fs *).(/ fromIntegral fftsz)) a, b, c)
@@ -91,12 +86,6 @@ peakInterp mag phase peaks = V.unzip3 (V.map iPM peaks) where
              in (iPeak, iMag, iPhase)
 
 
-decide :: Alternative f => T.Tree (Decision a b) -> f b
-decide x (T.Node (Action f) _) = pure f x
-decide x (T.Node (Requirement p) subtree)
-  | p x      = asum $ map (decide x) subtree
-  | otherwise = empty
-
 ifStable :: Maybe Freq -> V.Vector Freq -> MagSpect -> V.Vector Freq
 ifStable f0t f0cf f0cm = case f0t of
   Nothing -> f0cf
@@ -104,19 +93,14 @@ ifStable f0t f0cf f0cm = case f0t of
     let shortlist = V.findIndices (\x -> abs (x - f) < f/2) f0cf
         maxc = V.maxIndex f0cm
         maxcfd = (f0cf V.! maxc) `mod'` f
-        decisions f0t' =
-            iff (const True) [
-                iff (maxcfd > f0t'/2) [
-                  iff (notElem maxc shortlist && ((f0t - maxcfd) > (f0t' / 4))) [
-                    const (action (V.backpermute f0cf (V.snoc shortlist maxc)))
-                  ]
-                ],
-                iff (notElem maxc shortlist && (maxcfd > (f0t' / 4))) [
-                  const (action (V.backpermute f0cf (V.snoc shortlist maxc)))
-                ],
-                const (action V.backpermute f0cf shortlist)
-              ]
-    in decide f0t decisions
+    in  if maxcfd > f/2 then
+          if notElem maxc shortlist && (f - maxcfd) > (f / 4) then
+            V.backpermute f0cf (V.snoc shortlist maxc)
+          else V.backpermute f0cf shortlist
+        else
+          if notElem maxc shortlist && maxcfd > (f / 4) then
+            V.backpermute f0cf (V.snoc shortlist maxc)
+          else V.backpermute f0cf shortlist
 
 
 maxErr :: Double -> Freq -> Double -> Maybe Freq
@@ -140,7 +124,7 @@ f0Twm pfreq pmag errmax minfreq maxfreq f0t
   | V.length pfreq < 3 && isNothing f0t = Nothing
   | V.length f0c == 0 = Nothing
   | V.length f0cf' == 0 = Nothing
-  | otherwise = maxErr errmax $ twm pfreq pmag f0cf'
+  | otherwise = uncurry (maxErr errmax) $ twm pfreq pmag f0cf'
   where
       f0c = V.findIndices (\x -> x > minfreq && x < maxfreq) pfreq
       f0cf = V.backpermute pfreq f0c
@@ -148,73 +132,90 @@ f0Twm pfreq pmag errmax minfreq maxfreq f0t
       f0cf' = ifStable f0t f0cf f0cm
 
 
-twm :: V.Vector Freq -> MagSpect -> V.Vector Freq -> (Double, Double)
-twm pfreq pmag f0cf = (0, 0)
+transpose :: Matrix a -> Matrix a
+transpose xss = if V.null $ V.head xss
+  then V.empty
+  else V.map V.head xss `V.cons` transpose (V.map V.tail xss)
 
+genLike :: Matrix a -> b -> Matrix b
+genLike m x = V.map (\col -> V.replicate (V.length col) x) m
 
+mZip :: (a -> b -> c) -> Matrix a -> Matrix b -> Matrix c
+mZip f = V.zipWith (V.zipWith f)
 
-{-
+mSub, mAdd, mMult :: Num a => Matrix a -> Matrix a -> Matrix a
+mSub = mZip (-)
+mAdd = mZip (+)
+mMult = mZip (*)
+
+vSub, vAdd, vMult :: Num a => V.Vector a -> V.Vector a -> V.Vector a
+vSub = V.zipWith (-)
+vAdd = V.zipWith (+)
+vMult = V.zipWith (*)
+
+mMap :: (a -> b) -> Matrix a -> Matrix b
+mMap f = V.map (V.map f)
+
+toBool :: Num b => (a -> Bool) -> V.Vector a -> V.Vector b
+toBool p = V.map (\x -> if p x then 1 else 0)
+
+vFlat :: Matrix a -> V.Vector a
+vFlat xss = if V.null xss
+  then V.empty
+  else V.head xss V.++ vFlat (V.tail xss)
+
 -- Vector of peak (freq, mag), Vector of (freq, mag) candidates for f0
 twm :: V.Vector Freq -> MagSpect -> V.Vector Freq -> (Double, Double)
-twm pfreq pmag candidates = V.minimumBy (comparing snd) genErrs where
+twm pfreq pmag f0c = (f0c V.! f0index, totalError V.! f0index) where
     -- Values for the Two way mismatch algorithm
-    p = 0.5 :: Double
+    p = 0.5
     q = 1.4
     r = 0.5
     rho = 0.33
-    -- Lower number of harmonics is better for signals
-    -- with a lot of noise. 10 may be ideal.
-    maxnpeaks = 10
-    aMax = V.maximum pmag
-    fMax = V.maximum pfreq
-    --    fN :: Double -> Int
-    fN fund = ceiling (fMax/fund)
-    -- Vector of f0 candidates and corresponding
-    -- error ratio.
-    genErrs :: V.Vector (Double, Double)
-    genErrs = V.map (errTotal.genPartials) candidates
-    genPartials f = V.iterateN (fN f) (+f) f
-    errTotal vec = (V.head vec, pToM pfreq vec + rho * mToP pfq vec)
+    -- Lower number of harmonics is better for signals with a lot of noise.
+    -- 10 may be ideal.
+    maxnpeaks = 10 :: Int
+    errorPM :: V.Vector Double
+    errorPM = V.replicate (V.length f0c) 0
+    maxNPM = min maxnpeaks (V.length pfreq)
 
-    -- Takes a vector of (freq, mag) and a vector of predicted spectrums
-    -- and calculates the predicted to measured error and the length
-    -- of the predicted vector = N.
-    pToM :: V.Vector Freq -> MagSpect -> V.Vector Freq -> Double
-    pToM pfreq pmag predicted = V.sum (V.map errpm predicted) / fromIntegral (V.length predicted) where
-      errpm :: Double -> Double
-      errpm pfreq = let (deltaf, freq, mag) = V.minimumBy (comparing one) $ V.map absmin vecfm
-                        one (a, _, _) = a
-                        absmin :: (Double, Double) -> (Double, Double, Double)
-                        absmin (f, m) = (abs (pfreq - f), f, m)
-                        freqp = freq ** (-p)
-                     in (deltaf * freqp) + ((mag/aMax) *
-                        ((q * deltaf * freqp) - r))
+    totalError :: V.Vector Double
+    totalError = V.map (/ fromIntegral maxNPM) pToM `vAdd`
+                 V.map (\x-> (rho * x) / fromIntegral maxNPM) mToP
+    f0index = V.minIndex totalError
 
-    -- Takes a vector of (freq, mag) and a vector of predicted spectrums
-    -- and calculates the measured to predicted error and the length
-    -- of the peaks vector = K.
+    magFactor = V.map (\x -> 10**((x - V.maximum pmag)/20))
+    pondMag mf pd = pd `vAdd` (mf `vMult` V.map (\x -> q * x - r) pd)
 
-    mToP :: V.Vector Freq -> MagSpect -> V.Vector Freq -> Double
-    mToP vecfm predicted = V.sum (V.map errmp vecfm) / fromIntegral (V.length vecfm) where
-      errmp :: (Double, Double) -> Double
-      errmp (freq, mag) = let deltaf = V.minimum $ V.map absmin predicted
-                              absmin :: Double -> Double
-                              absmin pfreq = abs (freq - pfreq)
-                              freqp = freq ** (-p)
-                           in (deltaf * freqp) + ((mag/aMax) *
-                              ((q * deltaf * freqp) - r))
+    pToM :: V.Vector Double
+    pToM = go maxNPM f0c errorPM where
+      go 0 _ err = err
+      go x h err =
+        let harmonicT = transpose (V.singleton h)
+            difmatrixPM = V.map (V.replicate (V.length pfreq)) h
+            difmatrixPM' = mMap abs (difmatrixPM `mSub` V.replicate (V.length h) pfreq)
+            freqDistance = V.map V.minimum difmatrixPM'
+            peakloc = V.map V.minIndex difmatrixPM'
+            ponddif = freqDistance `vMult` V.map (**(-p)) h
+            magFactor' = magFactor $ V.backpermute pmag peakloc
+            err' = err `vAdd` pondMag magFactor' ponddif
+        in  go (x - 1) (h `vAdd` f0c) err'
 
-calcVertex :: (Eq a, Fractional a) => (a, a) -> (a, a) -> (a, a) -> (a -> a)
-calcVertex (x1, y1) (x2, y2) (x3, y3)
-  | x1 == x2 || x2 == x1 || x2 == x3 = error "shouldn't error"
-  | otherwise = \x -> a*x^2 + b*x + c where
-           denom = (x1 - x2)*(x1 - x3)*(x2 - x3)
-           a = (x3 * (y2 - y1) + x2 * (y1 - y3) + x1 * (y3 - y2)) / denom
-           b = (x3^2 * (y1 - y2) + x2^2 * (y3 - y1) + x1^2 * (y2 - y3)) / denom
-           c = (x2 * x3 * (x2 - x3) * y1 +
-                x3 * x1 * (x3 - x1) * y2 +
-                x1 * x2 * (x1 - x2) * y3) / denom
--}
+    mToP :: V.Vector Double
+    mToP = go 0 V.empty where
+      pfreq' = V.take maxNPM pfreq
+      magFactor' = magFactor $ V.take maxNPM pmag
+      go i err
+        | i >= maxNPM = err
+        | otherwise =
+          let nharm :: V.Vector Int
+              nharm = V.map (round. (/ f0c V.! i)) pfreq'
+              nharm' = (toBool (>=1) nharm `vMult` nharm) `vAdd` toBool (<1) nharm
+              freqDistance = V.map abs (pfreq' `vSub` V.map ((* f0c V.! i ). fromIntegral) nharm')
+              ponddif = freqDistance `vMult` V.map (**(-p)) pfreq'
+              err' = V.snoc err (V.sum (magFactor' `vMult` pondMag magFactor' ponddif))
+         in   go (i + 1) err'
+
 
 main :: IO ()
 main = do
@@ -222,5 +223,5 @@ main = do
   let window = hammingC 2048
       -- (sample rate, window, FFTsz, Hopsz, Thresh in DB, min freq, maxfreq, error margin)
       anal = f0Detection audio window 2048 256 (-80) 100 3000 5.0
-  mapM_ print anal
+  print anal
  -- writeFile "f0detect.txt" (show anal)
