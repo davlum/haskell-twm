@@ -1,61 +1,64 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE TypeOperators     #-}
 
-module App (app) where
+module App where
 
-import Control.Monad.Trans.Except
-import Data.Aeson
-import GHC.Generics
-import Network.Wai
-import Network.Wai.Handler.Warp
-import Servant
-import System.IO
-import TWM
-import qualified Data.Vector as V
+import           Control.Monad.IO.Class
+import           Control.Monad.Logger     (runStderrLoggingT)
 
-type SongApi =
- "song" :> Get '[JSON] [Song] :<|>
- "song" :> Capture "songId" Integer :> Get '[JSON] Song
+import           Data.String.Conversions
 
-songApi :: Proxy SongApi
-songApi = Proxy
+import           Database.Persist
+import           Database.Persist.Sql
+import           Database.Persist.Sqlite
 
-run :: IO ()
-run = do
- let port = 8000
-     settings =
-      setPort port $
-       setBeforeMainLoop (hPutStrLn stderr ("listening on port " ++ show port)) $
-       defaultSettings
- runSettings settings =<< mkApp
+import           Network.Wai
+import           Network.Wai.Handler.Warp as Warp
 
-mkApp :: IO Application
-mkApp = return $ serve songApi server
+import           Servant
 
-server :: Server SongApi
-server =
-  getSongs :<|>
-  getSongById
+import           Data.Text
 
-getSongs :: Handler [Song]
-getSongs = return [exampleSong]
+import           Api
+import           Models
 
-getSongById :: Integer -> Handler Song
-getSongById = \case
-  0 -> return exampleSong
-  _ -> throwE err404
+server :: ConnectionPool -> Server Api
+server pool =
+  userAddH :<|> userGetH :<|> files
+  where
+    userAddH newUser = liftIO $ userAdd newUser
+    userGetH name    = liftIO $ userGet name
 
-exampleSong :: Song
-exampleSong = Song 0 Nothing V.empty
+    userAdd :: User -> IO (Maybe (Key User))
+    userAdd newUser = flip runSqlPersistMPool pool $ do
+      exists <- selectFirst [UserName ==. (userName newUser)] []
+      case exists of
+        Nothing -> Just <$> insert newUser
+        Just _  -> return Nothing
 
-data Song
- = Song {
-   songId :: Integer,
-   songPath :: Maybe String,
-   songData :: V.Vector Double
-        } deriving (Eq, Show, Generic)
+    userGet :: Text -> IO (Maybe User)
+    userGet name = flip runSqlPersistMPool pool $ do
+      mUser <- selectFirst [UserName ==. name] []
+      return $ entityVal <$> mUser
 
-instance ToJSON Song
-instance FromJSON Song
+files :: Server Raw
+files = serveDirectoryFileServer "assets"
+
+app :: ConnectionPool -> Application
+app pool = serve api $ server pool
+
+mkApp :: FilePath -> IO Application
+mkApp sqliteFile = do
+  pool <- runStderrLoggingT $ do
+    createSqlitePool (cs sqliteFile) 5
+
+  runSqlPool (runMigration migrateAll) pool
+  return $ app pool
+
+run :: FilePath -> IO ()
+run sqliteFile =
+  Warp.run 3000 =<< mkApp sqliteFile

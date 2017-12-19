@@ -22,7 +22,8 @@ executable f0-pitch-detection-haskell
                      , Window
                      , App
   other-extensions:    FlexibleContexts, ScopedTypeVariables
-  build-depends:       base >=4.9 && <5.0
+
+  build-depends:       base >=4.8 && <4.9
                      , WAVE >=0.1 && <0.2
                      , array >=0.5 && <0.6
                      , vector >=0.11 && <0.12
@@ -41,5 +42,6 @@ executable f0-pitch-detection-haskell
                      , wai
                      , warp
   hs-source-dirs:      src
-  pkgconfig-depends:   fftw3
   default-language:    Haskell2010
+  ghc-options: -Wall
+  Ghc-Options: -O2

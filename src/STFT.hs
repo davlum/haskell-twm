@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-
@@ -27,15 +27,16 @@ module STFT (
 
   ) where
 
-import System.IO (writeFile)
-import Data.WAVE
-import Window
-import qualified Data.Vector.Generic as V
-import Numeric.FFT.Vector.Invertible
-import Data.Vector
-import qualified Data.Complex as C
-import Data.Bifunctor (first)
-import Data.Vector.Split (divvy)
+import           Data.Bifunctor                (first)
+import qualified Data.Complex                  as C
+import           Data.List                     as L
+import           Data.Vector
+import qualified Data.Vector.Generic           as V
+import           Data.Vector.Split             (divvy)
+import           Data.WAVE
+import           Numeric.FFT.Vector.Invertible
+import           System.IO                     (writeFile)
+import           Window
 
 epsilon = 2.2204460492503131e-16
 
@@ -88,7 +89,7 @@ zeroPhaseWindow :: CSignal -> FFTsz -> CSignal
 zeroPhaseWindow xs fftsz = let win = V.length xs
                                hM1 = floor $ fromIntegral (win + 1) / 2
                                hM2 = floor $ fromIntegral win / 2
-                               zs = V.replicate (fftsz-hM1-hM2) (c 0)
+                               zs = V.replicate (fftsz - hM1 - hM2) (c 0)
                             in V.concat [V.slice hM2 hM1 xs, zs,
                                          V.slice 0 hM2 xs]
 
@@ -180,7 +181,7 @@ stftSynth magphase hopsz winsz = let hM1 = floor $ fromIntegral (winsz+1) / 2
                                      signalFrames = fmap (V.map (fromIntegral hopsz * ) . dftSynth winsz ) magphase
                                      signalTuples = fmap (V.splitAt hM1) signalFrames
                                      overlapAdd (x1, x2) (y1, y2) = (x1 V.++ V.zipWith (+) x2 y1, y2)
-                                  in V.drop hM1 $ fst (Prelude.foldl1 overlapAdd
+                                  in V.drop hM1 $ fst (L.foldl' overlapAdd
                                         (Prelude.head signalTuples) (Prelude.tail signalTuples))
 
 -- Takes a vector of doubles, the sample frequency, and a name
