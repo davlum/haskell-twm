@@ -1,8 +1,8 @@
-#Haskell Two-Way Mismatch
+**Haskell Two-Way Mismatch**
 
 Implementation of the two-way mismatch algorithm for fundamental frequency detection. Includes an implementation of the short-time Fourier transform in Haskell.
 
-##Requirements
+**Requirements**
 
 This currently requires an installation of fftw, although there may be a switch to a [pure Haskell implementation](https://hackage.haskell.org/package/arb-fft) in the future.
 
