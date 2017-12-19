@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 
-module Main where
+module TWM where
 
 import           Control.Applicative
 import           Control.DeepSeq
@@ -216,7 +216,7 @@ twm pfreq pmag f0c = (f0c V.! f0index, totalError V.! f0index) where
               err' = V.snoc err (V.sum (magFactor' `vMult` pondMag magFactor' ponddif))
          in   go (i + 1) err'
 
-
+{-
 main :: IO ()
 main = do
   audio <- readWav "singing-female.wav"
@@ -224,4 +224,4 @@ main = do
       -- (sample rate, window, FFTsz, Hopsz, Thresh in DB, min freq, maxfreq, error margin)
       anal = f0Detection audio window 2048 256 (-80) 100 3000 5.0
   print anal
- -- writeFile "f0detect.txt" (show anal)
+  -}

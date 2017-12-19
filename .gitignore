@@ -7,5 +7,6 @@ dist/
 FFTTest*
 TWM
 STFT
+*.db
 .cabal-sandbox/
 cabal.sandbox.config

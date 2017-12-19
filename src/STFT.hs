@@ -27,7 +27,6 @@ module STFT (
 
   ) where
 
-import           Data.Bifunctor                (first)
 import qualified Data.Complex                  as C
 import           Data.List                     as L
 import           Data.Vector
@@ -35,9 +34,9 @@ import qualified Data.Vector.Generic           as V
 import           Data.Vector.Split             (divvy)
 import           Data.WAVE
 import           Numeric.FFT.Vector.Invertible
-import           System.IO                     (writeFile)
 import           Window
 
+epsilon :: Double
 epsilon = 2.2204460492503131e-16
 
 -- This code from the Linear.Epsilon library
@@ -87,26 +86,13 @@ unwrap xs = fromList $ diff (toList xs) 0 where
 -- Takes a complex signal and fftsz does zero phase windows
 zeroPhaseWindow :: CSignal -> FFTsz -> CSignal
 zeroPhaseWindow xs fftsz = let win = V.length xs
+                               hM1 :: Int
                                hM1 = floor $ fromIntegral (win + 1) / 2
+                               hM2 :: Int
                                hM2 = floor $ fromIntegral win / 2
                                zs = V.replicate (fftsz - hM1 - hM2) (c 0)
                             in V.concat [V.slice hM2 hM1 xs, zs,
                                          V.slice 0 hM2 xs]
-
-
--- Normalize signal to 0 Db.
-normTo0Db :: Vector (Double,Double) -> Vector (Double, Double)
-normTo0Db xs = V.map (first ((fst $ V.maximumBy compare xs) -)) xs
-
--- Next power of 2 greater than n.
-po2gtn :: Int -> Int
-po2gtn n = 2 ^ ceiling ( logBase 2 (fromIntegral n))
-
-isPo2 :: (Ord a, Fractional a) => a -> Bool
-isPo2 x
-  | x > 2     = isPo2 (x / 2)
-  | x == 2    = True
-  | otherwise = False
 
 -- Calculates the magnitude spectrum in Db
 magSpect :: CSignal -> MagSpect
@@ -158,8 +144,6 @@ stft dsig win fftsz hopsz = let sig = V.map c dsig -- Convert to complex
 dftSynth :: Winsz -> (MagSpect, PhaseSpect) -> Signal
 dftSynth win (magVec, phaseVec) =
   let vec = V.zipWith (\x y -> (x, y)) magVec phaseVec
-      hN = V.length vec
-      n = (hN-1)*2
       hM1 = floor $ fromIntegral (win+1) / 2
       hM2 = floor $ fromIntegral win / 2
       posFreqs = V.map f vec where
@@ -194,7 +178,7 @@ writeWav vec sf name = let samples = fmap ((:[]) . doubleToSample) (V.toList vec
 -- Takes a Path and returns IO (sampling frequency, Vector signal).
 readWav :: Path -> IO (Int, Signal)
 readWav path = do
-  audio <- getWAVEFile "singing-female.wav"
+  audio <- getWAVEFile path
   let header = waveHeader audio
       samples = waveSamples audio
       channels = waveNumChannels header
