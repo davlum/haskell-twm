@@ -3,7 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeOperators #-}
 
-module App where
+module App (app) where
 
 import Control.Monad.Trans.Except
 import Data.Aeson

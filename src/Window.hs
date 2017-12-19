@@ -4,7 +4,8 @@ module Window (
   , hammingC
   , c
   , Window
-  , CWindow 
+  , CWindow
+
   ) where
 
 import Data.Vector
@@ -24,11 +25,9 @@ c = (C.:+ 0)
 -- A hamming window of size n.
 hamming :: Int -> Window
 hamming m = generate m hamming' where
-  hamming' n = 0.54 - 0.46*cos(2 * pi * (fromIntegral n)/(fromIntegral m-1))
+  hamming' n = 0.54 - 0.46 * cos (2 * pi * fromIntegral n / (fromIntegral m - 1))
 
 -- A hamming window of type Complex Double of size n
 hammingC :: Int -> CWindow
 hammingC m = generate m hamming' where
-  hamming' n = c $ 0.54 - 0.46*cos(2 * pi * (fromIntegral n)/(fromIntegral m-1))
-
-
+  hamming' n = c $ 0.54 - 0.46 * cos (2 * pi * fromIntegral n / (fromIntegral m - 1))
