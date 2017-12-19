@@ -28,14 +28,16 @@ import           Models
 
 server :: ConnectionPool -> Server Api
 server pool =
-  userAddH :<|> userGetH :<|> files
+  userAddH :<|>
+  userGetH :<|>
+  files
   where
     userAddH newUser = liftIO $ userAdd newUser
     userGetH name    = liftIO $ userGet name
 
     userAdd :: User -> IO (Maybe (Key User))
     userAdd newUser = flip runSqlPersistMPool pool $ do
-      exists <- selectFirst [UserName ==. (userName newUser)] []
+      exists <- selectFirst [UserName ==. userName newUser] []
       case exists of
         Nothing -> Just <$> insert newUser
         Just _  -> return Nothing
@@ -45,20 +47,21 @@ server pool =
       mUser <- selectFirst [UserName ==. name] []
       return $ entityVal <$> mUser
 
-files :: Server Raw
-files = serveDirectoryFileServer "assets"
+    files :: Server Raw
+    files = serveDirectoryFileServer "assets"
 
 app :: ConnectionPool -> Application
 app pool = serve api $ server pool
 
 mkApp :: FilePath -> IO Application
 mkApp sqliteFile = do
-  pool <- runStderrLoggingT $ do
-    createSqlitePool (cs sqliteFile) 5
+  pool <- runStderrLoggingT $ createSqlitePool (cs sqliteFile) 5
 
   runSqlPool (runMigration migrateAll) pool
   return $ app pool
 
 run :: FilePath -> IO ()
-run sqliteFile =
-  Warp.run 3000 =<< mkApp sqliteFile
+run sqliteFile = do
+  let port = 3000
+  putStrLn $ "listening on port " ++ show port
+  Warp.run port =<< mkApp sqliteFile

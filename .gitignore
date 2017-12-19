@@ -4,9 +4,9 @@ yinacf10/
 *.o
 *.hi
 dist/
-FFTTest*
 TWM
 STFT
 *.db
+assets/
 .cabal-sandbox/
 cabal.sandbox.config
