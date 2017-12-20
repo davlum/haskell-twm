@@ -208,5 +208,5 @@ twmWrapper audio =
 
 test :: IO ()
 test = do
-  audio <- readWav "src/singing-female.wav"
+  audio <- readWav "test/singing-female.wav"
   print $ twmWrapper audio
