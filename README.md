@@ -11,6 +11,7 @@ On MacOS
 
 1. `brew install fftw`
 2. `git clone https://github.com/mdn/web-dictaphone.git assets`
-3. `cabal sandbox init`
-4. `cabal install --dependencies-only && cabal configure && cabal build`
-5. `cabal run`
+3. `cabal update`
+4. `cabal sandbox init`
+5. `cabal install --dependencies-only && cabal configure && cabal build`
+6. `cabal run`

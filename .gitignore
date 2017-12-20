@@ -6,7 +6,7 @@ yinacf10/
 dist/
 TWM
 STFT
-*.db
+*.db*
 assets/
 .cabal-sandbox/
 cabal.sandbox.config

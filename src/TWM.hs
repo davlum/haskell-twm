@@ -2,18 +2,9 @@
 
 module TWM where
 
-import           Control.Applicative
-import           Control.DeepSeq
-import           Data.Bifunctor      (first)
-import qualified Data.Complex        as C
-import           Data.Fixed          (mod')
-import           Data.Foldable
-import           Data.List           (scanl')
+import           Data.Fixed  (mod')
 import           Data.Maybe
-import           Data.Ord            (comparing)
-import qualified Data.Vector         as V
-import           Debug.Trace
-import           GHC.Generics
+import qualified Data.Vector as V
 import           STFT
 import           Window
 
@@ -45,7 +36,7 @@ f0Detection (fs, sig) window fftsz hopsz thresh minfreq maxfreq errmax =
   fmap (fromMaybe 0) (tail $ scanl scanf0Twm Nothing lsVec) where
     sigstft = stft sig window fftsz hopsz
     lsVec = fmap peakMod sigstft
-    ipFreqs (a, b, c) = (V.map ((fromIntegral fs *).(/ fromIntegral fftsz)) a, b, c)
+    ipFreqs (x, y, z) = (V.map ((fromIntegral fs *).(/ fromIntegral fftsz)) x, y, z)
     scanf0Twm :: Maybe Freq -> (V.Vector Double, MagSpect, PhaseSpect) -> Maybe Freq
     scanf0Twm f0t (ipfreq, ipmag, _) = f0Twm ipfreq ipmag errmax minfreq maxfreq f0t
     peakMod (magVec, phaseVec) = ipFreqs $ peakInterp magVec phaseVec (peakDetection thresh magVec)
@@ -74,7 +65,7 @@ peakInterp mag phase peaks = V.unzip3 (V.map iPM peaks) where
     sides ind = (ind-1, ind, ind+1)
     yVals vec (i1, i2, i3) = (vec V.! i1, vec V.! i2, vec V.! i3)
     iploc p (l, m, r) = fromIntegral p + 0.5 * (l - r)/(l - 2 * m + r)
-    iPM i = let adj@(l,m,r) = sides i
+    iPM i = let adj = sides i
                 mags@(ml,mm,mr) = yVals mag adj
                 iPeak = iploc i mags :: Double
                 iMag = mm - 0.25*(ml - mr)*(iPeak- fromIntegral i)
@@ -191,8 +182,7 @@ twm pfreq pmag f0c = (f0c V.! f0index, totalError V.! f0index) where
     pToM = go maxNPM f0c errorPM where
       go 0 _ err = err
       go x h err =
-        let harmonicT = transpose (V.singleton h)
-            difmatrixPM = V.map (V.replicate (V.length pfreq)) h
+        let difmatrixPM = V.map (V.replicate (V.length pfreq)) h
             difmatrixPM' = mMap abs (difmatrixPM `mSub` V.replicate (V.length h) pfreq)
             freqDistance = V.map V.minimum difmatrixPM'
             peakloc = V.map V.minIndex difmatrixPM'
