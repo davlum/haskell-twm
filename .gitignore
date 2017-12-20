@@ -6,6 +6,5 @@ dist/
 TWM
 STFT
 *.db*
-assets/
 .cabal-sandbox/
 cabal.sandbox.config
