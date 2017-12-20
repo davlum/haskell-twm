@@ -1,6 +1,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 
-module TWM where
+module TWM (
+
+   test
+ , twmWrapper
+ , f0Detection
+
+) where
 
 import           Data.Fixed  (mod')
 import           Data.Maybe
@@ -123,14 +129,6 @@ f0Twm pfreq pmag errmax minfreq maxfreq f0t
       f0cf' = ifStable f0t f0cf f0cm
 
 
-transpose :: Matrix a -> Matrix a
-transpose xss = if V.null $ V.head xss
-  then V.empty
-  else V.map V.head xss `V.cons` transpose (V.map V.tail xss)
-
-genLike :: Matrix a -> b -> Matrix b
-genLike m x = V.map (\col -> V.replicate (V.length col) x) m
-
 mZip :: (a -> b -> c) -> Matrix a -> Matrix b -> Matrix c
 mZip f = V.zipWith (V.zipWith f)
 
@@ -149,11 +147,6 @@ mMap f = V.map (V.map f)
 
 toBool :: Num b => (a -> Bool) -> V.Vector a -> V.Vector b
 toBool p = V.map (\x -> if p x then 1 else 0)
-
-vFlat :: Matrix a -> V.Vector a
-vFlat xss = if V.null xss
-  then V.empty
-  else V.head xss V.++ vFlat (V.tail xss)
 
 -- Vector of peak (freq, mag), Vector of (freq, mag) candidates for f0
 twm :: V.Vector Freq -> MagSpect -> V.Vector Freq -> (Double, Double)
@@ -206,12 +199,14 @@ twm pfreq pmag f0c = (f0c V.! f0index, totalError V.! f0index) where
               err' = V.snoc err (V.sum (magFactor' `vMult` pondMag magFactor' ponddif))
          in   go (i + 1) err'
 
-{-
-main :: IO ()
-main = do
-  audio <- readWav "singing-female.wav"
+twmWrapper :: (Int, Signal) -> [Freq]
+twmWrapper audio =
   let window = hammingC 2048
-      -- (sample rate, window, FFTsz, Hopsz, Thresh in DB, min freq, maxfreq, error margin)
-      anal = f0Detection audio window 2048 256 (-80) 100 3000 5.0
-  print anal
-  -}
+  -- (sample rate, window, FFTsz, Hopsz, Thresh in DB, min freq, maxfreq, error margin)
+  in  f0Detection audio window 2048 256 (-80) 100 3000 5.0
+
+
+test :: IO ()
+test = do
+  audio <- readWav "src/singing-female.wav"
+  print $ twmWrapper audio

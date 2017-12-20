@@ -83,16 +83,20 @@ unwrap xs = fromList $ diff (toList xs) 0 where
   diff []  _     = []
 
 
+hM1 :: Int -> Int
+hM1 win = floor $ (fromIntegral (win + 1) / 2 :: Double)
+
+hM2 :: Int -> Int
+hM2 win = floor $ (fromIntegral win / 2 :: Double)
+
 -- Takes a complex signal and fftsz does zero phase windows
 zeroPhaseWindow :: CSignal -> FFTsz -> CSignal
 zeroPhaseWindow xs fftsz = let win = V.length xs
-                               hM1 :: Int
-                               hM1 = floor $ fromIntegral (win + 1) / 2
-                               hM2 :: Int
-                               hM2 = floor $ fromIntegral win / 2
-                               zs = V.replicate (fftsz - hM1 - hM2) (c 0)
-                            in V.concat [V.slice hM2 hM1 xs, zs,
-                                         V.slice 0 hM2 xs]
+                               hM1' = hM1 win
+                               hM2' = hM2 win
+                               zs = V.replicate (fftsz - hM1' - hM2') (c 0)
+                            in V.concat [V.slice hM2' hM1' xs, zs,
+                                         V.slice 0 hM2' xs]
 
 -- Calculates the magnitude spectrum in Db
 magSpect :: CSignal -> MagSpect
@@ -132,7 +136,7 @@ stft dsig win fftsz hopsz = let sig = V.map c dsig -- Convert to complex
                                 winsz = V.length win
                                 wdiv = V.sum win
                                 w = V.map (/wdiv) win -- Normalize window function
-                                halfWin = floor $ fromIntegral winsz / 2
+                                halfWin = floor $ (fromIntegral winsz / 2 :: Double)
                                 zs = V.replicate halfWin (c 0)
                                 sigzs = V.concat [zs, sig, zs]
                                 splitSig = divvy winsz hopsz sigzs
@@ -144,8 +148,6 @@ stft dsig win fftsz hopsz = let sig = V.map c dsig -- Convert to complex
 dftSynth :: Winsz -> (MagSpect, PhaseSpect) -> Signal
 dftSynth win (magVec, phaseVec) =
   let vec = V.zipWith (\x y -> (x, y)) magVec phaseVec
-      hM1 = floor $ fromIntegral (win+1) / 2
-      hM2 = floor $ fromIntegral win / 2
       posFreqs = V.map f vec where
         f (mag, phase) = (10**(mag/20) C.:+ 0) *
                          exp ((phase C.:+ 0) *
@@ -155,17 +157,17 @@ dftSynth win (magVec, phaseVec) =
         f (mag, phase) = (10**(mag/20) C.:+ 0) *
                          exp ((phase C.:+ 0) *
                          (0 C.:+ (-1)))
-      x = run idft (posFreqs V.++ negFreqs)
-  in V.map C.realPart $ V.concat [V.slice (V.length x - hM2) hM2 x, V.take hM1 x]
+      resultidft = run idft (posFreqs V.++ negFreqs)
+  in V.map C.realPart $
+     V.concat [V.slice (V.length resultidft - hM2 win) (hM2 win) resultidft
+              , V.take (hM1 win) resultidft]
 
 
 stftSynth :: [(MagSpect, PhaseSpect)] -> Hopsz -> Winsz -> Signal
-stftSynth magphase hopsz winsz = let hM1 = floor $ fromIntegral (winsz+1) / 2
-                                     hM2 = floor $ fromIntegral winsz / 2
-                                     signalFrames = fmap (V.map (fromIntegral hopsz * ) . dftSynth winsz ) magphase
-                                     signalTuples = fmap (V.splitAt hM1) signalFrames
+stftSynth magphase hopsz winsz = let signalFrames = fmap (V.map (fromIntegral hopsz * ) . dftSynth winsz ) magphase
+                                     signalTuples = fmap (V.splitAt $ hM1 winsz) signalFrames
                                      overlapAdd (x1, x2) (y1, y2) = (x1 V.++ V.zipWith (+) x2 y1, y2)
-                                  in V.drop hM1 $ fst (L.foldl' overlapAdd
+                                  in V.drop (hM1 winsz) $ fst (L.foldl' overlapAdd
                                         (Prelude.head signalTuples) (Prelude.tail signalTuples))
 
 -- Takes a vector of doubles, the sample frequency, and a name

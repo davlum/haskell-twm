@@ -15,9 +15,6 @@ type Window = Vector Double -- Windowing
 
 type CWindow = Vector (C.Complex Double) -- Windowing
 
-type WindowFunction = Int -> Window
-
-
 -- quick conversion to complex
 c :: Num a => a -> C.Complex a
 c = (C.:+ 0)
