@@ -3,24 +3,30 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Api where
 
-import           Data.Proxy
+import           Servant
 import           Data.Text
-
 import           Database.Persist
-
 import           Models
+import           Servant.Multipart
 
-import           Servant.API
+newtype Song = Song { wavFile :: Text } deriving (Eq, Ord, Show)
 
+instance FromMultipart Mem Song where
+  fromMultipart multipartData =
+      Song <$> lookupInput "recording" multipartData
 
+type UploadAPI = "upload" :> MultipartForm Mem Song :> Post '[JSON] Integer
 
-type Api =
+type SongAPI =
        "user" :> "add" :> ReqBody '[JSON] User :> Post '[JSON] (Maybe (Key User))
   :<|> "user" :> "get" :> Capture "name" Text  :> Get  '[JSON] (Maybe User)
   :<|> Raw
 
-api :: Proxy Api
+type API = UploadAPI :<|> SongAPI
+
+api :: Proxy API
 api = Proxy

@@ -1,67 +1,88 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE TypeOperators     #-}
 
 module App where
 
-import           Control.Monad.IO.Class
-import           Control.Monad.Logger     (runStderrLoggingT)
-
-import           Data.String.Conversions
-
-import           Database.Persist
-import           Database.Persist.Sql
-import           Database.Persist.Sqlite
-
-import           Network.Wai
+import Control.Monad
+import Control.Monad.IO.Class
 import           Network.Wai.Handler.Warp as Warp
 
-import           Servant
+import Servant
+import Servant.Multipart
 
-import           Data.Text
+import qualified Data.ByteString.Lazy as LBS
 
-import           Api
-import           Models
+-- Our API, which consists in a single POST endpoint at /
+-- that takes a multipart/form-data request body and
+-- pretty-prints the data it got to stdout before returning 0.
+--type UploadAPI = "upload" :> MultipartForm Mem (MultipartData Mem) :> Post '[JSON] Integer
 
-server :: ConnectionPool -> Server Api
-server pool =
-  userAddH :<|>
-  userGetH :<|>
-  files
-  where
-    userAddH newUser = liftIO $ userAdd newUser
-    userGetH name    = liftIO $ userGet name
+newtype Song = Song { wavFile :: Text } deriving (Eq, Ord, Show)
 
-    userAdd :: User -> IO (Maybe (Key User))
-    userAdd newUser = flip runSqlPersistMPool pool $ do
-      exists <- selectFirst [UserName ==. userName newUser] []
-      case exists of
-        Nothing -> Just <$> insert newUser
-        Just _  -> return Nothing
+instance FromMultipart Mem Song where
+  fromMultipart multipartData =
+      Song <$> lookupInput "recording" multipartData
 
-    userGet :: Text -> IO (Maybe User)
-    userGet name = flip runSqlPersistMPool pool $ do
-      mUser <- selectFirst [UserName ==. name] []
-      return $ entityVal <$> mUser
+type UploadAPI = "upload" :> MultipartForm Mem Song :> Post '[JSON] Integer
 
-    files :: Server Raw
-    files = serveDirectoryFileServer "assets"
+type AssetsAPI = Raw
 
-app :: ConnectionPool -> Application
-app pool = serve api $ server pool
+type API = UploadAPI :<|> AssetsAPI
 
-mkApp :: FilePath -> IO Application
-mkApp sqliteFile = do
-  pool <- runStderrLoggingT $ createSqlitePool (cs sqliteFile) 5
+api :: Proxy API
+api = Proxy
 
-  runSqlPool (runMigration migrateAll) pool
-  return $ app pool
+server :: Server API
+server = upload :<|> static
 
-run :: FilePath -> IO ()
-run sqliteFile = do
-  let port = 3000
-  putStrLn $ "listening on port " ++ show port
-  Warp.run port =<< mkApp sqliteFile
+-- The handler for our single endpoint.
+-- Its concrete type is:
+--   MultipartData -> Handler Integer
+--
+-- MultipartData consists in textual inputs,
+-- accessible through its "inputs" field, as well
+-- as files, accessible through its "files" field.
+{-
+upload :: Server UploadAPI
+upload multipartData = do
+  liftIO $ do
+    putStrLn "Inputs:"
+    forM_ (inputs multipartData) $ \input ->
+      putStrLn $ "  " ++ show (iName input)
+            ++ " -> " ++ show (iValue input)
+
+    forM_ (files multipartData) $ \file -> do
+      let content = fdPayload file
+      putStrLn $ "Content of " ++ show (fdFileName file)
+      LBS.putStr content
+
+  return 0
+-}
+
+upload :: Server UploadAPI
+upload multipartData = do
+  liftIO $ do
+    putStrLn "Inputs:"
+    forM_ (inputs multipartData) $ \input ->
+      putStrLn $ "  " ++ show (iName input)
+            ++ " -> " ++ show (iValue input)
+
+    forM_ (files multipartData) $ \file -> do
+      let content = fdPayload file
+      putStrLn $ "Content of " ++ show (fdFileName file)
+      LBS.putStr content
+
+  return 0
+
+
+static :: Server Raw
+static = serveDirectoryFileServer "assets"
+
+startServer :: IO ()
+startServer = Warp.run 8080 (serve api server)
+
+run :: IO ()
+run = startServer
+  -- we fork the server in a separate thread and send a test
+  -- request to it from the main thread.

@@ -1,53 +1,34 @@
 <!DOCTYPE html>
-<html lang="en-us">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width">
-    <title>Web dictaphone</title>
-    <link href="styles/app.css" rel="stylesheet" type="text/css">
-    <link href="styles/install-button.css" rel="stylesheet" type="text/css">
-  </head>
-  <body>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Live input record and playback</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.2/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-PsH8R72JQ3SOdhVi3uxftmaW6Vc51MKb0q5P2rRUpPvrszuE4W1povHYgTpBfshb" crossorigin="anonymous">
+  <style type='text/css'>
+    ul { list-style: none; }
+    .list-inline { justify-content: center; }
+  </style>
+</head>
+<body>
+  <br /><br />
+  <div class="text-center">
+    <h1>Record your voice and get a suggested harmony</h1>
+    <button type="button" onclick="startRecording(this);">record</button>
+    <button type="button" onclick="stopRecording(this);" disabled>stop</button>
 
-    <div class="wrapper">
+    <h2>Recordings</h2>
+    <ul class="list-inline center-block" id="recordingslist"></ul>
 
-      <header>
-        <h1>Web dictaphone</h1>
-      </header>
-
-      <section class="main-controls">
-        <canvas class="visualizer" height="60px"></canvas>
-        <div id="buttons">
-          <button class="record">Record</button>
-          <button class="stop">Stop</button>
-        </div>
-      </section>
-
-      <section class="sound-clips">
-
-
-      </section>
-
-    </div>
-
-    <label for="toggle">❔</label>
-    <input type="checkbox" id="toggle">
-    <aside>
-      <h2>Information</h2>
-
-      <p>Web dictaphone is built using <a href="https://developer.mozilla.org/en-US/docs/Web/API/Navigator.getUserMedia">getUserMedia</a> and the <a href="https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder_API">MediaRecorder API</a>, which provides an easier way to capture Media streams.</p>
-
-      <p>Icon courtesy of <a href="http://findicons.com/search/microphone">Find Icons</a>. Thanks to <a href="http://soledadpenades.com/">Sole</a> for the Oscilloscope code!</p>
-
-      <button id="install-btn">Install app</button>
-    </aside>
-
-    <script src="scripts/install.js"></script>
-
-    <script src="scripts/mediaDevices-getUserMedia-polyfill.js"></script>
-
-    <!-- Below is your custom application script -->
-    <script src="scripts/app.js"></script>
-
-  </body>
+    <h2>Log</h2>
+    <pre id="log"></pre>
+    <script
+    			  src="https://code.jquery.com/jquery-3.2.1.js"
+    			  integrity="sha256-DZAnKJ/6XZ9si04Hgrsxu/8s717jcIzLy3oi35EouyE="
+    			  crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.3/umd/popper.min.js" integrity="sha384-vFJXuSJphROIrBnz7yo7oB41mKfc8JzQZiCq4NCceLEaO4IHwicKwpJf9c9IpFgh" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.2/js/bootstrap.min.js" integrity="sha384-alpBpkh1PFOepccYVYDB4do5UnbKysX5WZXm3XxPqe5iKTfUKjNkCk9SaVuEZflJ" crossorigin="anonymous"></script>
+    <script src="./js/vendor/recorder.js"></script>
+    <script src="./js/button.js"></script>
+  </div>
+</body>
 </html>
