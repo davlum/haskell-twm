@@ -107,7 +107,7 @@
 
               this.config = {
                 bufferLen: 4096,
-                numChannels: 2,
+                numChannels: 1,
                 mimeType: "audio/wav",
               }
               this.recording = false

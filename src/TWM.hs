@@ -5,12 +5,15 @@ module TWM (
    test
  , twmWrapper
  , f0Detection
+ , readWav
+ , writeWav
 
 ) where
 
 import           Data.Fixed  (mod')
 import           Data.Maybe
 import qualified Data.Vector as V
+import           Data.WAVE
 import           STFT
 import           Window
 
@@ -21,6 +24,8 @@ type Indices = V.Vector Int
 type Freq = Double
 
 type Matrix a = V.Vector (V.Vector a)
+
+type Path = String
 
 -- linear interpolation between two points
 linInterp :: (Int, Double) -> (Int, Double) -> Double -> Double
@@ -198,6 +203,27 @@ twm pfreq pmag f0c = (f0c V.! f0index, totalError V.! f0index) where
               ponddif = freqDistance `vMult` V.map (**(-p)) pfreq'
               err' = V.snoc err (V.sum (magFactor' `vMult` pondMag magFactor' ponddif))
          in   go (i + 1) err'
+
+-- Takes a vector of doubles, the sample frequency, and a name
+-- and writes the audio file. Written in 32 bit.
+writeWav :: Signal -> Int -> String -> IO ()
+writeWav vec sf name = let samples = fmap ((:[]) . doubleToSample) (V.toList vec)
+                           header = WAVEHeader 1 sf 32 Nothing
+                       in putWAVEFile name (WAVE header samples)
+
+-- Takes a Path and returns IO (sampling frequency, Vector signal).
+readWav :: Path -> IO (Int, Signal)
+readWav path = do
+  audio <- getWAVEFile path
+  let header = waveHeader audio
+      samples = waveSamples audio
+      channels = waveNumChannels header
+      sampRate = waveFrameRate header
+  case channels of
+    1 -> let sig = V.fromList $ fmap (sampleToDouble . Prelude.head) samples
+          in return (sampRate, sig)
+    _ -> error "Should be mono."
+
 
 twmWrapper :: (Int, Signal) -> [Freq]
 twmWrapper audio =

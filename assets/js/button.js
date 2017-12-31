@@ -90,7 +90,6 @@ window.onload = function init() {
   } catch (e) {
     alert("No web audio support in this browser!")
   }
-
   navigator.getUserMedia({ audio: true }, startUserMedia, function(e) {
     __log("No live audio input: " + e)
   })

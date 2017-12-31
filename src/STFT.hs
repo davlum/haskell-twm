@@ -13,8 +13,6 @@ http://www.mega-nerd.com/erikd/Blog/CodeHacking/Haskell/what_do_you_mean.html
 module STFT (
 
     stft
-  , readWav
-  , writeWav
   , stftSynth
   , hammingC
   , Signal
@@ -32,7 +30,6 @@ import           Data.List                     as L
 import           Data.Vector
 import qualified Data.Vector.Generic           as V
 import           Data.Vector.Split             (divvy)
-import           Data.WAVE
 import           Numeric.FFT.Vector.Invertible
 import           Window
 
@@ -65,8 +62,6 @@ type Signal = Vector Double
 type FFTsz = Int -- Should be Greater than 0 and a power of 2
 
 type Hopsz = Int -- Should be about 1/4 the fft sz
-
-type Path = String
 
 type Winsz = Int -- Should be an odd number and smaller than FFTsz
 
@@ -169,23 +164,3 @@ stftSynth magphase hopsz winsz = let signalFrames = fmap (V.map (fromIntegral ho
                                      overlapAdd (x1, x2) (y1, y2) = (x1 V.++ V.zipWith (+) x2 y1, y2)
                                   in V.drop (hM1 winsz) $ fst (L.foldl' overlapAdd
                                         (Prelude.head signalTuples) (Prelude.tail signalTuples))
-
--- Takes a vector of doubles, the sample frequency, and a name
--- and writes the audio file. Written in 32 bit.
-writeWav :: Signal -> Int -> String -> IO ()
-writeWav vec sf name = let samples = fmap ((:[]) . doubleToSample) (V.toList vec)
-                           header = WAVEHeader 1 sf 32 Nothing
-                       in putWAVEFile name (WAVE header samples)
-
--- Takes a Path and returns IO (sampling frequency, Vector signal).
-readWav :: Path -> IO (Int, Signal)
-readWav path = do
-  audio <- getWAVEFile path
-  let header = waveHeader audio
-      samples = waveSamples audio
-      channels = waveNumChannels header
-      sampRate = waveFrameRate header
-  case channels of
-    1 -> let sig = fromList $ fmap (sampleToDouble . Prelude.head) samples
-          in return (sampRate, sig)
-    _ -> error "Should be mono."
