@@ -11,15 +11,7 @@ import           Servant
 import           Servant.Multipart
 
 -- Probably redundant
-import           Control.Monad
-import qualified Data.ByteString.Lazy     as LBS
-import           Data.Text
 import           TWM
-
--- Our API, which consists in a single POST endpoint at /
--- that takes a multipart/form-data request body and
--- pretty-prints the data it got to stdout before returning 0.
---type UploadAPI = "upload" :> MultipartForm Mem (MultipartData Mem) :> Post '[JSON] Integer
 
 type UploadAPI = "upload" :> MultipartForm Tmp (MultipartData Tmp) :> Post '[JSON] Integer
 
@@ -38,10 +30,11 @@ uploadS :: Server UploadAPI
 uploadS multipartData =
   let maybeFile = fmap fdPayload (lookupFile "recording" multipartData)
   in case maybeFile of
-        Nothing -> error "File was not able to be saved"
+        Nothing -> error "File was not properly not recieved"
         Just file -> liftIO $ do
           audio <- readWav file
-          print $ fst audio
+          let result = twmWrapper audio
+          print result
           return 0
 
 
@@ -49,7 +42,7 @@ static :: Server Raw
 static = serveDirectoryFileServer "assets"
 
 startServer :: IO ()
-startServer = Warp.run 8080 (serve api server)
+startServer = Warp.run 3000 (serve api server)
 
 run :: IO ()
 run = startServer

@@ -27,8 +27,7 @@ module STFT (
 
 import qualified Data.Complex                  as C
 import           Data.List                     as L
-import           Data.Vector
-import qualified Data.Vector.Generic           as V
+import           Data.Vector                   as V
 import           Data.Vector.Split             (divvy)
 import           Numeric.FFT.Vector.Invertible
 import           Window
@@ -159,8 +158,9 @@ dftSynth win (magVec, phaseVec) =
 
 
 stftSynth :: [(MagSpect, PhaseSpect)] -> Hopsz -> Winsz -> Signal
-stftSynth magphase hopsz winsz = let signalFrames = fmap (V.map (fromIntegral hopsz * ) . dftSynth winsz ) magphase
-                                     signalTuples = fmap (V.splitAt $ hM1 winsz) signalFrames
-                                     overlapAdd (x1, x2) (y1, y2) = (x1 V.++ V.zipWith (+) x2 y1, y2)
-                                  in V.drop (hM1 winsz) $ fst (L.foldl' overlapAdd
+stftSynth magphase hopsz winsz = 
+  let signalFrames = fmap (V.map (fromIntegral hopsz * ) . dftSynth winsz ) magphase
+      signalTuples = fmap (V.splitAt $ hM1 winsz) signalFrames
+      overlapAdd (x1, x2) (y1, y2) = (x1 V.++ V.zipWith (+) x2 y1, y2)
+   in V.drop (hM1 winsz) $ fst (L.foldl' overlapAdd
                                         (Prelude.head signalTuples) (Prelude.tail signalTuples))
