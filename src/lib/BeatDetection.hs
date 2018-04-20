@@ -1,12 +1,12 @@
 {-# LANGUAGE GADTs #-}
 
-module BeatDetection where
+module Lib.BeatDetection where
 
-import qualified TWM as TWM
+import qualified Data.List        as Ls
+import qualified Data.List.Split  as LsSplit
+import qualified Data.Vector      as Vec
+import qualified Lib.TWM          as TWM
 import qualified System.Directory as Sys
-import qualified Data.Vector as Vec
-import qualified Data.List.Split as LsSplit
-import qualified Data.List as Ls
 
 data Numerator = Three | Four
 
@@ -17,7 +17,7 @@ newtype SamplingRate = SamplingRate Int
 
 newtype ImpulseSize = ImpulseSize Int
 
-newtype BPM = BPM Int 
+newtype BPM = BPM Int
 
 instance IntWrapper BPM where
   eval (BPM x) = x
@@ -45,7 +45,7 @@ energyPerImpulse impulseSize samplingRate sig =
 
 -- infinite list of the metronome signal
 mkMetronomeSignal :: Numerator -> ImpulseSize -> SamplingRate -> BPM -> [Double]
-mkMetronomeSignal timeSig imp samp bpm = 
+mkMetronomeSignal timeSig imp samp bpm =
   let impulsesPerSecond :: Double
       impulsesPerSecond = fromIntegral (eval samp) / fromIntegral (eval imp)
       impulsesPerBeat = impulsesPerSecond * (fromIntegral (eval bpm) / 60)
@@ -53,7 +53,7 @@ mkMetronomeSignal timeSig imp samp bpm =
       zsBy4 = zsByN 8
       zsBy3 = zsByN 6
    in case timeSig of
-        Three -> concat $ repeat $ 1 : zsBy3 ++ 0.5 : zsBy3 ++ 0.5 : zsBy3 
+        Three -> concat $ repeat $ 1 : zsBy3 ++ 0.5 : zsBy3 ++ 0.5 : zsBy3
         Four  -> concat $ repeat $ 1 : zsBy4 ++ 0.5 : zsBy4 ++ 0.75 : zsBy4 ++ 0.5 : zsBy4
 
 correlate :: (Num a, Ord a) => [a] -> [a] -> [a]
@@ -63,17 +63,6 @@ correlate xs ys =
     _ -> fmap (sum . zipWith sumSquare ys) divvySig where
       smallSigLen = length ys
       divvySig = LsSplit.divvy smallSigLen 1 xs
-
--- Given a minimum and maximum BPM and a signal, 
--- I'll give you a timeSig, BPM and the start index
-findTempo :: BPM -> BPM -> ImpulseSize -> SamplingRate -> [Double] -> (Numerator, BPM, Int)
-findTempo mixBPM maxBPM imp samp sig =
-  let bpmRange = [eval minBPM..eval maxBPM]
-      metronomeLs3 = fmap (mkMetronomeSignal Three imp samp) bpmRange
-      metronomeLs4 = fmap (mkMetronomeSignal Four imp samp) bpmRange
-      
-      
-
 
 runningSum :: Num a => [a] -> [a]
 runningSum = go 0 where
@@ -89,9 +78,9 @@ difference [i] = [i]
 difference (i:j:is) = i : go j ((j - i):is)
   where
     go :: Num a => a -> [a] -> [a]
-    go _ [] = []
-    go _ [x] = [x]
-    go n [x, y] = x : go y [y-n]
+    go _ []       = []
+    go _ [x]      = [x]
+    go n [x, y]   = x : go y [y - n]
     go n (x:y:xs) = x : go y ((y - n):xs)
 
 {-
@@ -116,19 +105,6 @@ energyPerSecond blocksz fs sig =
       vecBools = V.zipWith (\c enLs -> V.map (> c) enLs) constAvgLs energyLs
   in concat $ V.toList $ fmap V.toList vecBools
 -}
-
-countBeats :: Int -> Int -> [[Bool]] -> [BeatFrame]
-countBeats _ _ [] = []
-countBeats blocksz fs (xs:xss) =
-  let
-    toSeconds :: [Bool] -> Double
-    toSeconds ls = fromIntegral (length ls) *
-      (fromIntegral blocksz / fromIntegral fs)
-  in
-    case xs of
-      [] -> []
-      (False : _) -> NoBeat (toSeconds xs) : countBeats blocksz fs xss
-      (True: _) -> Beat (toSeconds xs) : countBeats blocksz fs xss
 
 runDetect :: IO ()
 runDetect = do

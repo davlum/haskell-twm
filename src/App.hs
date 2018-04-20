@@ -11,7 +11,7 @@ import           Servant
 import           Servant.Multipart
 
 -- Probably redundant
-import           TWM
+import           Lib.TWM
 
 type UploadAPI = "upload" :> MultipartForm Tmp (MultipartData Tmp) :> Post '[JSON] Integer
 

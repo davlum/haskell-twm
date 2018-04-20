@@ -17,18 +17,20 @@ cabal-version:       >=1.10
 
 executable haskell-twm
   main-is:             Main.hs
-  other-modules:       STFT
-                     , TWM
-                     , Window
+  other-modules:       Lib.STFT
+                     , Lib.TWM
+                     , Lib.Window
                      , App
-                     , BeatDetection
+                     , Api
+                     , Models
+                     , Lib.BeatDetection
   other-extensions:    FlexibleContexts, ScopedTypeVariables
 
   build-depends:       base >=4.11 && <5.0
                      , WAVE >=0.1 && <0.2
                      , array >=0.5 && <0.6
                      , vector >=0.11
-                     , vector-fftw >=0.1 && <0.2
+                     , vector-fftw >=0.1
                      , deepseq >=1.4 && <1.5
                      , servant >= 0.12
                      , servant-multipart >= 0.11

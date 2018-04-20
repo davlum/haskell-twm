@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 
-module TWM (
+module Lib.TWM (
 
    test
  , twmWrapper
@@ -14,8 +14,8 @@ import           Data.Fixed  (mod')
 import           Data.Maybe
 import qualified Data.Vector as V
 import           Data.WAVE
-import           STFT
-import           Window
+import           Lib.STFT
+import           Lib.Window
 
 type Threshold = Int
 

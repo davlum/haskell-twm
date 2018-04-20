@@ -10,7 +10,7 @@ http://www.mega-nerd.com/erikd/Blog/CodeHacking/Haskell/what_do_you_mean.html
 
 -}
 
-module STFT (
+module Lib.STFT (
 
     stft
   , stftSynth
@@ -29,8 +29,8 @@ import qualified Data.Complex                  as C
 import           Data.List                     as L
 import           Data.Vector                   as V
 import           Data.Vector.Split             (divvy)
+import           Lib.Window
 import           Numeric.FFT.Vector.Invertible
-import           Window
 
 epsilon :: Double
 epsilon = 2.2204460492503131e-16
@@ -78,10 +78,10 @@ unwrap xs = fromList $ diff (toList xs) 0 where
 
 
 hM1 :: Int -> Int
-hM1 win = floor $ (fromIntegral (win + 1) / 2 :: Double)
+hM1 win = floor (fromIntegral (win + 1) / 2 :: Double)
 
 hM2 :: Int -> Int
-hM2 win = floor $ (fromIntegral win / 2 :: Double)
+hM2 win = floor (fromIntegral win / 2 :: Double)
 
 -- Takes a complex signal and fftsz does zero phase windows
 zeroPhaseWindow :: CSignal -> FFTsz -> CSignal
@@ -130,7 +130,7 @@ stft dsig win fftsz hopsz = let sig = V.map c dsig -- Convert to complex
                                 winsz = V.length win
                                 wdiv = V.sum win
                                 w = V.map (/wdiv) win -- Normalize window function
-                                halfWin = floor $ (fromIntegral winsz / 2 :: Double)
+                                halfWin = floor (fromIntegral winsz / 2 :: Double)
                                 zs = V.replicate halfWin (c 0)
                                 sigzs = V.concat [zs, sig, zs]
                                 splitSig = divvy winsz hopsz sigzs
@@ -158,7 +158,7 @@ dftSynth win (magVec, phaseVec) =
 
 
 stftSynth :: [(MagSpect, PhaseSpect)] -> Hopsz -> Winsz -> Signal
-stftSynth magphase hopsz winsz = 
+stftSynth magphase hopsz winsz =
   let signalFrames = fmap (V.map (fromIntegral hopsz * ) . dftSynth winsz ) magphase
       signalTuples = fmap (V.splitAt $ hM1 winsz) signalFrames
       overlapAdd (x1, x2) (y1, y2) = (x1 V.++ V.zipWith (+) x2 y1, y2)

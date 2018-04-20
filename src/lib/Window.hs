@@ -1,4 +1,4 @@
-module Window (
+module Lib.Window (
 
     hamming
   , hammingC
@@ -8,8 +8,8 @@ module Window (
 
   ) where
 
-import Data.Vector
 import qualified Data.Complex as C
+import           Data.Vector
 
 type Window = Vector Double -- Windowing
 
