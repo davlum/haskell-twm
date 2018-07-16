@@ -6,12 +6,3 @@ Implementation of the two-way mismatch algorithm for fundamental frequency detec
 
 This currently requires an installation of fftw, although there may be a switch to a [pure Haskell implementation](https://hackage.haskell.org/package/arb-fft) in the future.
 For now the front end is just the cloned repository for the [web-dictaphone](https://github.com/mdn/web-dictaphone).
-
-On MacOS
-
-1. `brew install fftw`
-2. `git clone https://github.com/mdn/web-dictaphone.git assets`
-3. `cabal update`
-4. `cabal sandbox init`
-5. `cabal install --dependencies-only && cabal configure && cabal build`
-6. `cabal run`
