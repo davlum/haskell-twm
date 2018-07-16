@@ -5,46 +5,36 @@
 
 module App where
 
+import qualified Api                      as Api
 import           Control.Monad.IO.Class
+import qualified Lib.TWM                  as TWM
+import qualified Lib.Util                 as U
 import           Network.Wai.Handler.Warp as Warp
 import           Servant
 import           Servant.Multipart
 
--- Probably redundant
-import           Lib.TWM
-
-type UploadAPI = "upload" :> MultipartForm Tmp (MultipartData Tmp) :> Post '[JSON] Integer
-
-type AssetsAPI = Raw
-
-type API = UploadAPI :<|> AssetsAPI
-
-
-api :: Proxy API
-api = Proxy
-
-server :: Server API
+server :: Server Api.API
 server = uploadS :<|> static
 
-uploadS :: Server UploadAPI
+uploadS :: Server Api.UploadAPI
 uploadS multipartData =
   let maybeFile = fmap fdPayload (lookupFile "recording" multipartData)
   in case maybeFile of
         Nothing -> error "File was not properly not recieved"
         Just file -> liftIO $ do
-          audio <- readWav file
-          let result = twmWrapper audio
-          print result
-          return 0
+          audio <- U.readWav file
+          let hertz = TWM.twmWrapper $ U.makeSignal audio
+          return $ U.findf0 hertz
 
 
 static :: Server Raw
-static = serveDirectoryFileServer "assets"
+static = serveDirectoryFileServer "static"
 
-startServer :: IO ()
-startServer = Warp.run 3000 (serve api server)
+startServer :: Int -> IO ()
+startServer port = Warp.run port (serve Api.api server)
 
 run :: IO ()
-run = startServer
-  -- we fork the server in a separate thread and send a test
-  -- request to it from the main thread.
+run = do
+  let port = 8080
+  print $ "Server started at port " ++ show port
+  startServer port

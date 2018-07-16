@@ -1,185 +1,204 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-
-
 A lot of error handling needs to be added to the code. For example
 0 < hopsize < windowsize < fftsize needs to be reinforced.
-Code currently just throws exceptions. Maybe change to something like;
-http://www.mega-nerd.com/erikd/Blog/CodeHacking/Haskell/what_do_you_mean.html
-
 -}
 
-module Lib.STFT (
-
-    stft
-  , stftSynth
-  , hammingC
-  , Signal
-  , CSignal
-  , MagSpect
-  , PhaseSpect
-  , FFTsz
-  , Hopsz
-  , Winsz
-  , CWindow
-
-  ) where
+module Lib.STFT where
 
 import qualified Data.Complex                  as C
-import           Data.List                     as L
+import           Data.Proxy
+import           Data.Type.Equality
 import qualified Data.Vector                   as V
-import           Data.Vector.Split             (divvy)
+import           GHC.TypeNats
 import           Numeric.FFT.Vector.Invertible
 
-type Window = V.Vector Double -- Windowing
-
-type CWindow = V.Vector (C.Complex Double) -- Windowing
-
--- quick conversion to complex
-c :: Num a => a -> C.Complex a
-c = (C.:+ 0)
-
--- A hamming window of size n.
-hamming :: Int -> Window
-hamming m = V.generate m hamming' where
-  hamming' n = 0.54 - 0.46 * cos (2 * pi * fromIntegral n / (fromIntegral m - 1))
-
--- A hamming window of type Complex Double of size n
-hammingC :: Int -> CWindow
-hammingC m = V.generate m hamming' where
-  hamming' n = c $ 0.54 - 0.46 * cos (2 * pi * fromIntegral n / (fromIntegral m - 1))
-
-
+-- A small number
 epsilon :: Double
 epsilon = 2.2204460492503131e-16
 
--- This code from the Linear.Epsilon library
--- by Edward Kmett. There were some dependency conflicts
--- so I just copied it in. Will fix.
-class Num a => Epsilon a where
-  -- | Determine if a quantity is near zero.
-  nearZero :: a -> Bool
+-- |The magnitude spectrum of a signal
+newtype MagnitudeSpectrum = MkMag (V.Vector Double) deriving Show
 
--- | @'abs' a '<=' 1e-6@
-instance Epsilon Float where
-  nearZero a = abs a <= 1e-6
+-- |The phase spectrum of a signal
+newtype PhaseSpectrum = MkPhase (V.Vector Double) deriving Show
 
--- | @'abs' a '<=' 1e-12@
-instance Epsilon Double where
-  nearZero a = abs a <= 1e-12
+-- |Tuple of magnitude and phase Spectrum
+newtype Spectrums = MkSpect (MagnitudeSpectrum, PhaseSpectrum) deriving Show
 
-type MagSpect = V.Vector Double -- Magnitude Spectrum
+-- |A complex signal
+newtype Signal = MkSignal (V.Vector (C.Complex Double))
 
-type PhaseSpect = V.Vector Double -- Phase Spectrum
+-- |A Window
+newtype WindowFn n = Window { runWindow :: Winsz n -> V.Vector (C.Complex Double) }
 
-type CSignal = V.Vector (C.Complex Double) -- Complex Signal
+type family IsPo2 (m :: Nat) :: Bool where
+  IsPo2 n = 2 ^ Log2 n == n
 
-type Signal = V.Vector Double
+data FFTsz n where
+  MkFFTsz :: (KnownNat n, IsPo2 n ~ 'True) => Proxy n -> FFTsz n
 
-type FFTsz = Int -- Should be Greater than 0 and a power of 2
+data Winsz n where
+  MkWinsz :: KnownNat n => Proxy n -> Winsz n
 
-type Hopsz = Int -- Should be about 1/4 the fft sz
+data Hopsz n where
+  MkHopsz :: KnownNat n => Proxy n -> Hopsz n
 
-type Winsz = Int -- Should be an odd number and smaller than FFTsz
+data Config h w f where
+  MkConfig :: forall h w f. (KnownNat f, KnownNat w, KnownNat h, h <= w, w <= f) => Hopsz h -> Winsz w -> FFTsz f -> Config h w f
 
-
--- Phase unwrapping algorithm.
--- Converting to and from list for pattern matching is a little cumbersome.
-unwrap :: PhaseSpect -> PhaseSpect
-unwrap xs = V.fromList $ diff (V.toList xs) 0 where
-  diff (x:y:ys) accm
-    | (y+accm) - x > pi    = x: diff (y+accm-(2*pi):ys) (accm-(2*pi))
-    | (y+accm) - x < (-pi) = x: diff (y+accm+(2*pi):ys) (accm+(2*pi))
-    | otherwise             = x: diff (y+accm:ys) accm
-  diff [x] _     = [x]
-  diff []  _     = []
+config :: Config 256 2048 2048
+config = MkConfig hop win fft where
+  hop = (MkHopsz (Proxy @256))
+  win = (MkWinsz (Proxy @2048))
+  fft = (MkFFTsz (Proxy @2048))
 
 
-hM1 :: Int -> Int
-hM1 win = floor (fromIntegral (win + 1) / 2 :: Double)
+hamming :: forall n. KnownNat n => WindowFn n
+hamming = Window $ \(MkWinsz _) -> V.generate size goHamm
+  where
+    size = fromIntegral $ natVal (Proxy @n) :: Int
+    goHamm :: Int -> C.Complex Double
+    goHamm i = (C.:+ 0) $ 0.54 - 0.46 * cos (2 * pi * fromIntegral i / (fromIntegral size - 1))
 
-hM2 :: Int -> Int
-hM2 win = floor (fromIntegral win / 2 :: Double)
+-- |Phase unwrapping algorithm. Converting to and from list for pattern matching is a little cumbersome.
+unwrapPhase :: PhaseSpectrum -> PhaseSpectrum
+unwrapPhase (MkPhase xs) = MkPhase $ V.fromList $ (diff (V.toList xs) 0)
+  where
+    diff (x:y:ys) accm
+      | (y+accm) - x > pi    = x: diff (y + accm - (2 * pi):ys) (accm-(2*pi))
+      | (y+accm) - x < (-pi) = x: diff (y+accm+(2*pi):ys) (accm+(2*pi))
+      | otherwise             = x: diff (y+accm:ys) accm
+    diff [x] _     = [x]
+    diff []  _     = []
 
--- Takes a complex signal and fftsz does zero phase windows
-zeroPhaseWindow :: CSignal -> FFTsz -> CSignal
-zeroPhaseWindow xs fftsz = let win = V.length xs
-                               hM1' = hM1 win
-                               hM2' = hM2 win
-                               zs = V.replicate (fftsz - hM1' - hM2') (c 0)
-                            in V.concat [V.slice hM2' hM1' xs, zs,
-                                         V.slice 0 hM2' xs]
+halfInt, halfIntPlus :: Int -> Int
+halfIntPlus win = (win + 1) `div` 2
+halfInt win = win `div` 2
 
--- Calculates the magnitude spectrum in Db
-magSpect :: CSignal -> MagSpect
-magSpect = V.map (dB. near0 . C.magnitude) where
-  dB x = 20 * logBase 10 x
-  near0 x = if nearZero x then epsilon else x
+-- |Takes a complex signal and fftsz performs the zero phase windowing
+-- https://ccrma.stanford.edu/~jos/sasp/Zero_Phase_Zero_Padding.html
+zeroPhaseZeroPad :: forall n. KnownNat n => FFTsz n -> Signal -> Signal
+zeroPhaseZeroPad _ (MkSignal sig) = MkSignal $ positive V.++ zeros V.++ negative
+  where
+    fftsz = fromIntegral $ natVal (Proxy @n)
+    win = V.length sig
+    halfSig = halfInt win
+    halfSigPlus = halfIntPlus win
+    positive = V.slice halfSig halfSigPlus sig
+    negative = V.slice 0 halfSig sig
+    zeros = V.replicate (fftsz - halfSig - halfSigPlus) (0 C.:+ 0)
 
--- Calculates the phase spectrum
-phaseSpect :: CSignal -> PhaseSpect
-phaseSpect vec = unwrap $ V.map (C.phase . to0) vec where
-  to0 x = go (C.realPart x) (C.imagPart x)
-  go x y | nearZero x && nearZero y = 0 C.:+ 0
-         | nearZero x               = 0 C.:+ y
-         | nearZero y               = x C.:+ 0
-         | otherwise                = x C.:+ y
+nearZero :: Double -> Bool
+nearZero a = abs a <= 1e-12
 
-
--- Takes a windowed signal and FFT size returns a vector of tuples
--- (Magnitude, Phase). Magnitude in Db, phase unwrapped, both positve
--- half of the spectrum.
-dftAnal :: FFTsz -> CSignal -> (MagSpect, PhaseSpect)
-dftAnal fftsz winSig = (mag, phase) where
-    inputVec = zeroPhaseWindow winSig fftsz
-    hN = fftsz `div` 2 + 1
-    trsf :: V.Vector (C.Complex Double)
-    trsf = V.slice 0 hN (run dft inputVec)
-    mag = magSpect trsf
-    phase = phaseSpect trsf
+-- |Calculates the magnitude spectrum in Db
+magSpect :: Signal -> MagnitudeSpectrum
+magSpect (MkSignal sig) = MkMag $ V.map (dB. near0 . C.magnitude) sig
+  where
+    dB x = 20 * logBase 10 x
+    near0 x = if nearZero x then epsilon else x
 
 
--- Takes an input signal, a window, an fftsize and a hop size and
+-- |Calculates the phase spectrum
+phaseSpect :: Signal -> PhaseSpectrum
+phaseSpect (MkSignal vec) = unwrapPhase $ MkPhase $ V.map (C.phase . to0) vec
+  where
+    to0 x = go (C.realPart x) (C.imagPart x)
+    go x y | nearZero x && nearZero y = 0 C.:+ 0
+           | nearZero x               = 0 C.:+ y
+           | nearZero y               = x C.:+ 0
+           | otherwise                = x C.:+ y
+
+-- | Takes a windowed signal and FFT size returns a the
+-- magnitude and phase spectrums. Magnitude in Db, phase unwrapped,
+-- both positive halfs of the spectrums
+dftAnal :: forall n. KnownNat n => FFTsz n -> Signal -> Spectrums
+dftAnal fftsz sig = MkSpect (magSpect trsf, phaseSpect trsf)
+  where
+      (MkSignal inputVec) = zeroPhaseZeroPad fftsz sig
+      -- ^Positive spectrum includes sample 0
+      positiveSpect = ((fromIntegral $ natVal (Proxy @n)) `div` 2) + 1
+      trsf = MkSignal $ V.slice 0 positiveSpect (run dft inputVec)
+
+-- | Splits the vector into chunks of size n that are
+-- m distance apart. Static check that chunksize is larger than hop sz.
+divvy :: forall n m a. (KnownNat n, KnownNat m) => Winsz n
+      -> Hopsz m -> V.Vector a -> [V.Vector a]
+divvy _ _ = go n' m'
+  where
+    n' = fromIntegral $ natVal (Proxy :: Proxy n)
+    m' = fromIntegral $ natVal (Proxy :: Proxy m)
+
+    go :: Int -> Int -> V.Vector a -> [V.Vector a]
+    go x y vec
+      | V.length vec <= x = []
+      | otherwise = V.take x vec : go x y (V.drop y vec)
+
+normalize :: Fractional a => V.Vector a -> V.Vector a
+normalize win = fmap (/ V.foldl1' (+) win) win
+
+-- | Takes an input signal, a window, an fftsize and a hop size and
 -- computes the short time Fourier transform, returning a list of
--- (vector of magnitude, vector of phase)
-stft :: Signal -> CWindow ->
-  FFTsz -> Hopsz -> [(MagSpect, PhaseSpect)]
-stft dsig win fftsz hopsz = let sig = V.map c dsig -- Convert to complex
-                                winsz = V.length win
-                                wdiv = V.sum win
-                                w = V.map (/wdiv) win -- Normalize window function
-                                halfWin = floor (fromIntegral winsz / 2 :: Double)
-                                zs = V.replicate halfWin (c 0)
-                                sigzs = V.concat [zs, sig, zs]
-                                splitSig = divvy winsz hopsz sigzs
-                             in fmap (dftAnal fftsz . V.zipWith (*) w) splitSig
+-- magnitude and phase spectrums.
+stft :: forall h w f. (KnownNat h, KnownNat w, KnownNat f) => Config h w f -> Signal
+     -> [Spectrums]
+stft (MkConfig hopsz winsz fftsz) (MkSignal sig) = fmap winDFT splitSig
+  where
+    win = runWindow hamming winsz
+    halfWindow = floor (fromIntegral (natVal (Proxy @w)) / 2 :: Double)
+    zs = V.replicate halfWindow (0 C.:+ 0)
+    sigzs = zs V.++ sig V.++ zs
+    splitSig = divvy winsz hopsz sigzs
+
+    winDFT :: V.Vector (C.Complex Double) -> Spectrums
+    winDFT vec = dftAnal fftsz (MkSignal $ V.zipWith (*) vec (normalize win))
 
 
--- Takes a vector of tuples (Magnitude, Phase) and a window size
+-- Takes a tuple of vectors (Magnitude, Phase) and a window size
 -- and returns the original signal
-dftSynth :: Winsz -> (MagSpect, PhaseSpect) -> Signal
-dftSynth win (magVec, phaseVec) =
-  let vec = V.zipWith (\x y -> (x, y)) magVec phaseVec
-      posFreqs = V.map f vec where
+dftSynth :: forall n. KnownNat n => Winsz n
+         -> Spectrums -> V.Vector (C.Complex Double)
+dftSynth _ (MkSpect (MkMag magVec, MkPhase phaseVec)) =
+  let win = fromIntegral $ natVal (Proxy @n)
+      hwin = halfInt win
+      hwinp = halfIntPlus win
+      vec = V.zipWith (\x y -> (x, y)) magVec phaseVec
+      posFreqs = fmap f vec where
         f (mag, phase) = (10**(mag/20) C.:+ 0) *
                          exp ((phase C.:+ 0) *
                          (0 C.:+ 1))
-      negFreqs = (V.map f . V.reverse) (g vec) where
+      negFreqs = (fmap f . V.reverse) (g vec) where
         g = (V.init . V.tail)
         f (mag, phase) = (10**(mag/20) C.:+ 0) *
                          exp ((phase C.:+ 0) *
                          (0 C.:+ (-1)))
       resultidft = run idft (posFreqs V.++ negFreqs)
-  in V.map C.realPart $
-     V.concat [V.slice (V.length resultidft - hM2 win) (hM2 win) resultidft
-              , V.take (hM1 win) resultidft]
+  in V.slice (V.length resultidft - hwin)
+                    hwin resultidft V.++ V.take hwinp resultidft
 
 
-stftSynth :: [(MagSpect, PhaseSpect)] -> Hopsz -> Winsz -> Signal
-stftSynth magphase hopsz winsz =
-  let signalFrames = fmap (V.map (fromIntegral hopsz * ) . dftSynth winsz ) magphase
-      signalTuples = fmap (V.splitAt $ hM1 winsz) signalFrames
+stftSynth :: forall h w. (KnownNat h, KnownNat w) => [Spectrums]
+          -> Hopsz h -> Winsz w -> Signal
+stftSynth magphase _ winsz =
+  let hwinp = halfIntPlus $ fromIntegral $ natVal (Proxy @w)
+      signalFrames = fmap (fmap (fromIntegral (natVal (Proxy @h)) * ) . dftSynth winsz ) magphase
+      signalTuples = fmap (V.splitAt hwinp) signalFrames
       overlapAdd (x1, x2) (y1, y2) = (x1 V.++ V.zipWith (+) x2 y1, y2)
-   in V.drop (hM1 winsz) $ fst (L.foldl' overlapAdd
-                                        (Prelude.head signalTuples) (Prelude.tail signalTuples))
+   in MkSignal $ V.drop hwinp $ fst (foldl overlapAdd (Prelude.head signalTuples) (Prelude.tail signalTuples))
+
+

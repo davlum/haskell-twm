@@ -7,14 +7,8 @@ var recorder
 
 function startUserMedia(stream) {
   var input = audio_context.createMediaStreamSource(stream)
-  __log("Media stream created.")
-
-  // Uncomment if you want the audio to feedback directly
-  //input.connect(audio_context.destination);
-  //__log('Input connected to audio context destination.');
 
   recorder = new Recorder(input)
-  __log("Recorder initialised.")
 }
 
 function startRecording(button) {
@@ -38,7 +32,7 @@ function stopRecording(button) {
 
 function createDownloadLink() {
   recorder &&
-    recorder.exportWAV(function(blob) {
+    recorder.exportWAV(function (blob) {
       var formData = new FormData()
       if (blob) {
         var recording = new Blob([blob], { type: "audio/wav" })
@@ -66,6 +60,8 @@ function createDownloadLink() {
         enctype: "multipart/form-data",
         url: "/upload",
         data: formData,
+      }, (data) => {
+        alert("The most common note is " + data.note);
       })
     })
 }
@@ -85,12 +81,12 @@ window.onload = function init() {
     __log("Audio context set up.")
     __log(
       "navigator.getUserMedia " +
-        (navigator.getUserMedia ? "available." : "not present!"),
+      (navigator.getUserMedia ? "available." : "not present!"),
     )
   } catch (e) {
     alert("No web audio support in this browser!")
   }
-  navigator.getUserMedia({ audio: true }, startUserMedia, function(e) {
+  navigator.getUserMedia({ audio: true }, startUserMedia, function (e) {
     __log("No live audio input: " + e)
   })
 }

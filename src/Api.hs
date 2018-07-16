@@ -1,32 +1,21 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 
 module Api where
 
+import qualified Lib.Util          as U
 import           Servant
-import           Data.Text
-import           Database.Persist
-import           Models
 import           Servant.Multipart
 
-newtype Song = Song { wavFile :: Text } deriving (Eq, Ord, Show)
+type UploadAPI = "upload" :> MultipartForm Tmp (MultipartData Tmp) :> Post '[JSON] U.Note
 
-instance FromMultipart Mem Song where
-  fromMultipart multipartData =
-      Song <$> lookupInput "recording" multipartData
+type AssetsAPI = Raw
 
-type UploadAPI = "upload" :> MultipartForm Mem Song :> Post '[JSON] Integer
-
-type SongAPI =
-       "user" :> "add" :> ReqBody '[JSON] User :> Post '[JSON] (Maybe (Key User))
-  :<|> "user" :> "get" :> Capture "name" Text  :> Get  '[JSON] (Maybe User)
-  :<|> Raw
-
-type API = UploadAPI :<|> SongAPI
+type API = UploadAPI :<|> AssetsAPI
 
 api :: Proxy API
 api = Proxy
